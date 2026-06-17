@@ -12,6 +12,7 @@ ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME = range(310, 31
 ADMIN_RESULT_MATCH_ID, ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY = range(320, 325)
 ADMIN_DEPOSIT_AMOUNT = range(330, 331)
 ADMIN_LOTTERY_FIRST, ADMIN_LOTTERY_SECOND, ADMIN_LOTTERY_THIRD = range(340, 343)
+ADMIN_EDIT_MATCH_HOME, ADMIN_EDIT_MATCH_AWAY, ADMIN_EDIT_MATCH_TIME = range(350, 353)
 
 
 def admin_only(func):
@@ -650,7 +651,11 @@ async def admin_match_detail(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = []
     if m["status"] == "upcoming":
         keyboard.append([
-            InlineKeyboardButton("📋 إدخال النتيجة", callback_data=f"admin_enter_result_{match_id}")
+            InlineKeyboardButton("✏️ تعديل المباراة", callback_data=f"admin_edit_match_{match_id}"),
+            InlineKeyboardButton("📋 إدخال النتيجة", callback_data=f"admin_enter_result_{match_id}"),
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🗑 حذف المباراة", callback_data=f"admin_delete_match_{match_id}"),
         ])
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_matches")])
 
@@ -985,6 +990,166 @@ async def admin_lottery_third(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     context.user_data.clear()
     return ConversationHandler.END
+
+
+@admin_only
+async def admin_edit_match_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    match_id = int(query.data.split("_")[-1])
+    context.user_data["edit_match_id"] = match_id
+
+    with db() as conn:
+        m = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+
+    if not m:
+        await query.edit_message_text("❌ المباراة غير موجودة.")
+        return ConversationHandler.END
+
+    context.user_data["edit_match_current"] = dict(m)
+    await query.edit_message_text(
+        f"✏️ *تعديل المباراة*\n\n"
+        f"الفريق الأول الحالي: *{m['team_home']}*\n\n"
+        f"أدخل الاسم الجديد للفريق الأول، أو أرسل `-` للإبقاء على الاسم الحالي:",
+        parse_mode="Markdown",
+    )
+    return ADMIN_EDIT_MATCH_HOME
+
+
+async def admin_edit_match_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    val = update.message.text.strip()
+    current = context.user_data["edit_match_current"]
+    context.user_data["edit_new_home"] = current["team_home"] if val == "-" else val
+
+    await update.message.reply_text(
+        f"الفريق الثاني الحالي: *{current['team_away']}*\n\n"
+        f"أدخل الاسم الجديد للفريق الثاني، أو أرسل `-` للإبقاء على الاسم الحالي:",
+        parse_mode="Markdown",
+    )
+    return ADMIN_EDIT_MATCH_AWAY
+
+
+async def admin_edit_match_away(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    val = update.message.text.strip()
+    current = context.user_data["edit_match_current"]
+    context.user_data["edit_new_away"] = current["team_away"] if val == "-" else val
+
+    await update.message.reply_text(
+        f"موعد المباراة الحالي: *{current['match_time'][:16]}*\n\n"
+        f"أدخل الموعد الجديد بالصيغة: YYYY-MM-DD HH:MM\n"
+        f"مثال: 2025-07-15 20:00\n\n"
+        f"أو أرسل `-` للإبقاء على الموعد الحالي:",
+        parse_mode="Markdown",
+    )
+    return ADMIN_EDIT_MATCH_TIME
+
+
+async def admin_edit_match_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    val = update.message.text.strip()
+    current = context.user_data["edit_match_current"]
+    match_id = context.user_data["edit_match_id"]
+
+    if val == "-":
+        new_time = current["match_time"]
+    else:
+        try:
+            datetime.strptime(val, "%Y-%m-%d %H:%M")
+            new_time = val
+        except ValueError:
+            await update.message.reply_text(
+                "❌ صيغة التاريخ غير صحيحة. أعد المحاولة:\nYYYY-MM-DD HH:MM\nأو أرسل `-` للإبقاء على الموعد الحالي:"
+            )
+            return ADMIN_EDIT_MATCH_TIME
+
+    new_home = context.user_data["edit_new_home"]
+    new_away = context.user_data["edit_new_away"]
+
+    with db() as conn:
+        conn.execute(
+            "UPDATE matches SET team_home=?, team_away=?, match_time=? WHERE id=?",
+            (new_home, new_away, new_time, match_id),
+        )
+
+    await update.message.reply_text(
+        f"✅ *تم تعديل المباراة بنجاح!*\n\n"
+        f"⚽ {new_home} vs {new_away}\n"
+        f"🕐 {new_time}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 للمباريات", callback_data="admin_matches")]
+        ]),
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+@admin_only
+async def admin_delete_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    match_id = int(query.data.split("_")[-1])
+
+    with db() as conn:
+        m = conn.execute("SELECT * FROM matches WHERE id=?", (match_id,)).fetchone()
+        bets_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM bets WHERE match_id=? AND status='pending'",
+            (match_id,),
+        ).fetchone()["cnt"]
+
+    if not m:
+        await query.edit_message_text("❌ المباراة غير موجودة.")
+        return
+
+    if bets_count > 0:
+        await query.edit_message_text(
+            f"⚠️ لا يمكن حذف هذه المباراة لأن عليها {bets_count} رهان معلق.\n"
+            f"يجب إدخال النتيجة أولاً لتسوية الرهانات.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 رجوع", callback_data=f"admin_match_detail_{match_id}")]
+            ]),
+        )
+        return
+
+    await query.edit_message_text(
+        f"⚠️ *تأكيد الحذف*\n\n"
+        f"هل تريد حذف مباراة: *{m['team_home']} vs {m['team_away']}*؟\n"
+        f"لا يمكن التراجع عن هذا الإجراء.",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🗑 نعم، احذف", callback_data=f"admin_confirm_delete_{match_id}"),
+                InlineKeyboardButton("❌ إلغاء", callback_data=f"admin_match_detail_{match_id}"),
+            ]
+        ]),
+    )
+
+
+@admin_only
+async def admin_confirm_delete_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    match_id = int(query.data.split("_")[-1])
+
+    with db() as conn:
+        m = conn.execute("SELECT * FROM matches WHERE id=?", (match_id,)).fetchone()
+        if not m:
+            await query.edit_message_text("❌ المباراة غير موجودة.")
+            return
+        conn.execute("DELETE FROM bets WHERE match_id=?", (match_id,))
+        conn.execute("DELETE FROM matches WHERE id=?", (match_id,))
+
+    await query.edit_message_text(
+        f"✅ تم حذف مباراة {m['team_home']} vs {m['team_away']}.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 للمباريات", callback_data="admin_matches")]
+        ]),
+    )
 
 
 async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):

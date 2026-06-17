@@ -41,10 +41,13 @@ from handlers.admin import (
     admin_lottery, admin_draw_lottery_start,
     admin_lottery_first, admin_lottery_second, admin_lottery_third,
     admin_cancel,
+    admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
+    admin_delete_match, admin_confirm_delete_match,
     ADMIN_SET_TRC20, ADMIN_SET_BEP20,
     ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME,
     ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY,
     ADMIN_LOTTERY_FIRST, ADMIN_LOTTERY_SECOND, ADMIN_LOTTERY_THIRD,
+    ADMIN_EDIT_MATCH_HOME, ADMIN_EDIT_MATCH_AWAY, ADMIN_EDIT_MATCH_TIME,
 )
 from handlers.deposit_amount import (
     admin_deposit_enter_amount_start, admin_deposit_amount_received,
@@ -132,6 +135,20 @@ def main():
         per_message=False,
     )
 
+    admin_edit_match_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_edit_match_start, pattern="^admin_edit_match_\\d+$")],
+        states={
+            ADMIN_EDIT_MATCH_HOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_home)],
+            ADMIN_EDIT_MATCH_AWAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_away)],
+            ADMIN_EDIT_MATCH_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_time)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+        allow_reentry=True,
+    )
+
     admin_result_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_enter_result_start, pattern="^admin_enter_result_")],
         states={
@@ -179,6 +196,7 @@ def main():
     app.add_handler(bet_conv)
     app.add_handler(admin_wallet_conv)
     app.add_handler(admin_match_conv)
+    app.add_handler(admin_edit_match_conv)
     app.add_handler(admin_result_conv)
     app.add_handler(admin_lottery_conv)
     app.add_handler(admin_deposit_amount_conv)
@@ -209,6 +227,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_reject_withdrawal, pattern="^admin_reject_wd_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_matches, pattern="^admin_matches$"))
     app.add_handler(CallbackQueryHandler(admin_match_detail, pattern="^admin_match_detail_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_delete_match, pattern="^admin_delete_match_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_confirm_delete_match, pattern="^admin_confirm_delete_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_wallets, pattern="^admin_wallets$"))
     app.add_handler(CallbackQueryHandler(admin_lottery, pattern="^admin_lottery$"))
 
