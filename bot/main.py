@@ -1,0 +1,220 @@
+import os
+import sys
+import logging
+
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ConversationHandler,
+    filters,
+)
+
+from database import init_db
+from handlers.common import start, menu_callback, my_stats
+from handlers.wallet import (
+    wallet_menu, deposit_start, deposit_network_selected,
+    deposit_hash_received, withdraw_start, withdraw_address_received,
+    withdraw_amount_received, cancel,
+    DEPOSIT_HASH, WITHDRAW_ADDRESS, WITHDRAW_AMOUNT,
+)
+from handlers.referral import referral_menu
+from handlers.matches import (
+    matches_menu, show_matches, show_bet_types, bet_type_selected,
+    bet_prediction_received, cancel_bet, BET_PREDICTION,
+)
+from handlers.lottery import lottery_menu, lottery_buy, lottery_confirm
+from handlers.admin import (
+    admin_panel, admin_users, admin_user_detail,
+    admin_deposits, admin_deposit_detail,
+    admin_approve_deposit, admin_reject_deposit,
+    admin_withdrawals, admin_withdrawal_detail,
+    admin_approve_withdrawal, admin_reject_withdrawal,
+    admin_matches, admin_add_match_start, admin_add_match_home,
+    admin_add_match_away, admin_add_match_time,
+    admin_match_detail, admin_enter_result_start,
+    admin_result_score, admin_result_yellow, admin_result_red, admin_result_penalty,
+    admin_wallets, admin_set_trc20_start, admin_set_trc20,
+    admin_set_bep20_start, admin_set_bep20,
+    admin_lottery, admin_draw_lottery_start,
+    admin_lottery_first, admin_lottery_second, admin_lottery_third,
+    admin_cancel,
+    ADMIN_SET_TRC20, ADMIN_SET_BEP20,
+    ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME,
+    ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY,
+    ADMIN_LOTTERY_FIRST, ADMIN_LOTTERY_SECOND, ADMIN_LOTTERY_THIRD,
+)
+from handlers.deposit_amount import (
+    admin_deposit_enter_amount_start, admin_deposit_amount_received,
+    DEPOSIT_AMOUNT_STATE,
+)
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    stream=sys.stdout,
+)
+logger = logging.getLogger(__name__)
+
+
+def main():
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN not set!")
+        sys.exit(1)
+
+    init_db()
+    logger.info("Database initialized.")
+
+    app = Application.builder().token(token).build()
+
+    deposit_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(deposit_start, pattern="^deposit_start$")],
+        states={
+            DEPOSIT_HASH: [
+                MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, deposit_hash_received),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+    )
+
+    deposit_network_handler = CallbackQueryHandler(
+        deposit_network_selected, pattern="^deposit_(trc20|bep20)$"
+    )
+
+    withdraw_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(withdraw_start, pattern="^withdraw_start$")],
+        states={
+            WITHDRAW_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, withdraw_address_received)],
+            WITHDRAW_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, withdraw_amount_received)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+    )
+
+    bet_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(bet_type_selected, pattern="^bettype_")],
+        states={
+            BET_PREDICTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, bet_prediction_received)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_bet)],
+        per_message=False,
+    )
+
+    admin_wallet_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(admin_set_trc20_start, pattern="^admin_set_trc20$"),
+            CallbackQueryHandler(admin_set_bep20_start, pattern="^admin_set_bep20$"),
+        ],
+        states={
+            ADMIN_SET_TRC20: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_trc20)],
+            ADMIN_SET_BEP20: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_bep20)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+    )
+
+    admin_match_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_add_match_start, pattern="^admin_add_match$")],
+        states={
+            ADMIN_ADD_MATCH_HOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_home)],
+            ADMIN_ADD_MATCH_AWAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_away)],
+            ADMIN_ADD_MATCH_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_time)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+    )
+
+    admin_result_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_enter_result_start, pattern="^admin_enter_result_")],
+        states={
+            ADMIN_RESULT_SCORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_score)],
+            ADMIN_RESULT_YELLOW: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_yellow)],
+            ADMIN_RESULT_RED: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_red)],
+            ADMIN_RESULT_PENALTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_penalty)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+        allow_reentry=True,
+    )
+
+    admin_lottery_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_draw_lottery_start, pattern="^admin_draw_lottery$")],
+        states={
+            ADMIN_LOTTERY_FIRST: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_first)],
+            ADMIN_LOTTERY_SECOND: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_second)],
+            ADMIN_LOTTERY_THIRD: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_third)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+        allow_reentry=True,
+    )
+
+    admin_deposit_amount_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_deposit_enter_amount_start, pattern="^admin_dep_amount_")],
+        states={
+            DEPOSIT_AMOUNT_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_deposit_amount_received)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+        allow_reentry=True,
+    )
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(deposit_conv)
+    app.add_handler(withdraw_conv)
+    app.add_handler(bet_conv)
+    app.add_handler(admin_wallet_conv)
+    app.add_handler(admin_match_conv)
+    app.add_handler(admin_result_conv)
+    app.add_handler(admin_lottery_conv)
+    app.add_handler(admin_deposit_amount_conv)
+
+    app.add_handler(deposit_network_handler)
+
+    app.add_handler(CallbackQueryHandler(menu_callback, pattern="^main_menu$"))
+    app.add_handler(CallbackQueryHandler(my_stats, pattern="^my_stats$"))
+    app.add_handler(CallbackQueryHandler(wallet_menu, pattern="^wallet$"))
+    app.add_handler(CallbackQueryHandler(matches_menu, pattern="^matches_menu$"))
+    app.add_handler(CallbackQueryHandler(show_matches, pattern="^matches_(today|week|all)$"))
+    app.add_handler(CallbackQueryHandler(show_bet_types, pattern="^bet_match_"))
+    app.add_handler(CallbackQueryHandler(referral_menu, pattern="^referral$"))
+    app.add_handler(CallbackQueryHandler(lottery_menu, pattern="^lottery_menu$"))
+    app.add_handler(CallbackQueryHandler(lottery_buy, pattern="^lottery_buy$"))
+    app.add_handler(CallbackQueryHandler(lottery_confirm, pattern="^lottery_confirm$"))
+
+    app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+    app.add_handler(CallbackQueryHandler(admin_users, pattern="^admin_users$"))
+    app.add_handler(CallbackQueryHandler(admin_user_detail, pattern="^admin_user_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_deposits, pattern="^admin_deposits$"))
+    app.add_handler(CallbackQueryHandler(admin_deposit_detail, pattern="^admin_dep_detail_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_approve_deposit, pattern="^admin_approve_deposit_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_reject_deposit, pattern="^admin_reject_deposit_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_withdrawals, pattern="^admin_withdrawals$"))
+    app.add_handler(CallbackQueryHandler(admin_withdrawal_detail, pattern="^admin_wd_detail_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_approve_withdrawal, pattern="^admin_approve_wd_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_reject_withdrawal, pattern="^admin_reject_wd_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_matches, pattern="^admin_matches$"))
+    app.add_handler(CallbackQueryHandler(admin_match_detail, pattern="^admin_match_detail_\\d+$"))
+    app.add_handler(CallbackQueryHandler(admin_wallets, pattern="^admin_wallets$"))
+    app.add_handler(CallbackQueryHandler(admin_lottery, pattern="^admin_lottery$"))
+
+    logger.info("Zone Luck Bot is starting...")
+    app.run_polling(drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    main()
