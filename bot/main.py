@@ -41,6 +41,7 @@ from handlers.admin import (
     admin_set_bep20_start, admin_set_bep20,
     admin_lottery, admin_draw_lottery_start,
     admin_lottery_first, admin_lottery_second, admin_lottery_third,
+    admin_lottery_cancel,
     admin_cancel,
     admin_sync_matches,
     admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
@@ -166,12 +167,22 @@ def main():
         allow_reentry=True,
     )
 
+    _lottery_cancel_handler = CallbackQueryHandler(admin_lottery_cancel, pattern="^admin_lottery_cancel$")
     admin_lottery_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_draw_lottery_start, pattern="^admin_draw_lottery$")],
         states={
-            ADMIN_LOTTERY_FIRST: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_first)],
-            ADMIN_LOTTERY_SECOND: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_second)],
-            ADMIN_LOTTERY_THIRD: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_third)],
+            ADMIN_LOTTERY_FIRST: [
+                _lottery_cancel_handler,
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_first),
+            ],
+            ADMIN_LOTTERY_SECOND: [
+                _lottery_cancel_handler,
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_second),
+            ],
+            ADMIN_LOTTERY_THIRD: [
+                _lottery_cancel_handler,
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_lottery_third),
+            ],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
         per_chat=True,

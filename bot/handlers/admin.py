@@ -929,21 +929,50 @@ async def admin_lottery(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
+_LOTTERY_CANCEL_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔙 إلغاء / رجوع", callback_data="admin_lottery_cancel")]
+])
+
+
 @admin_only
 async def admin_draw_lottery_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "🥇 أدخل رقم تذكرة الجائزة الأولى ($100):"
+        "🥇 أدخل رقم تذكرة الجائزة الأولى ($100):",
+        reply_markup=_LOTTERY_CANCEL_KB,
     )
     return ADMIN_LOTTERY_FIRST
+
+
+async def admin_lottery_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("lottery_first", None)
+    context.user_data.pop("lottery_second", None)
+
+    with db() as conn:
+        tickets = conn.execute(
+            "SELECT lt.*, u.username, u.full_name FROM lottery_tickets lt JOIN users u ON lt.user_id = u.id WHERE lt.status = 'active' AND lt.prize_amount = 0 ORDER BY lt.purchased_at DESC"
+        ).fetchall()
+
+    text = f"🎟 *لوحة اليانصيب*\n\nعدد التذاكر النشطة: {len(tickets)}\n"
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 إعلان الفائزين", callback_data="admin_draw_lottery")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")],
+    ])
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    return ConversationHandler.END
 
 
 async def admin_lottery_first(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return ConversationHandler.END
     context.user_data["lottery_first"] = update.message.text.strip().upper()
-    await update.message.reply_text("🥈 أدخل رقم تذكرة الجائزة الثانية ($200):")
+    await update.message.reply_text(
+        "🥈 أدخل رقم تذكرة الجائزة الثانية ($200):",
+        reply_markup=_LOTTERY_CANCEL_KB,
+    )
     return ADMIN_LOTTERY_SECOND
 
 
@@ -951,7 +980,10 @@ async def admin_lottery_second(update: Update, context: ContextTypes.DEFAULT_TYP
     if update.effective_user.id != ADMIN_ID:
         return ConversationHandler.END
     context.user_data["lottery_second"] = update.message.text.strip().upper()
-    await update.message.reply_text("🥉 أدخل رقم تذكرة الجائزة الثالثة ($500):")
+    await update.message.reply_text(
+        "🥉 أدخل رقم تذكرة الجائزة الثالثة ($500):",
+        reply_markup=_LOTTERY_CANCEL_KB,
+    )
     return ADMIN_LOTTERY_THIRD
 
 
