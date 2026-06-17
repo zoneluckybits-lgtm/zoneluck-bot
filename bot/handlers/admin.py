@@ -4,6 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
 from utils import get_user_by_telegram_id, get_referral_tree, format_user_name, set_setting, get_setting
+from sync_matches import fetch_upcoming_matches, sync_matches_to_db
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
@@ -545,7 +546,10 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "SELECT * FROM matches ORDER BY match_time DESC LIMIT 15"
         ).fetchall()
 
-    keyboard = [[InlineKeyboardButton("➕ إضافة مباراة", callback_data="admin_add_match")]]
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة مباراة", callback_data="admin_add_match")],
+        [InlineKeyboardButton("🔄 استيراد تلقائي من كأس العالم", callback_data="admin_sync_matches")],
+    ]
     for m in matches:
         status_icon = {"upcoming": "⏳", "finished": "✅", "cancelled": "❌"}.get(m["status"], "❓")
         keyboard.append([
@@ -990,6 +994,46 @@ async def admin_lottery_third(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     context.user_data.clear()
     return ConversationHandler.END
+
+
+@admin_only
+async def admin_sync_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("⏳ جارٍ جلب مباريات كأس العالم من الإنترنت...")
+
+    try:
+        events = await fetch_upcoming_matches()
+        if not events:
+            await query.edit_message_text(
+                "⚠️ لم يتم العثور على مباريات في الوقت الحالي. حاول لاحقاً.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🔙 رجوع", callback_data="admin_matches")]]
+                ),
+            )
+            return
+
+        added, skipped = sync_matches_to_db(events)
+
+        await query.edit_message_text(
+            f"✅ *تمت المزامنة بنجاح!*\n\n"
+            f"📥 مباريات جديدة أُضيفت: *{added}*\n"
+            f"⏭ مباريات موجودة مسبقاً (تخطيت): *{skipped}*\n"
+            f"📊 إجمالي المباريات المُعالجة: *{len(events)}*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚽ عرض المباريات", callback_data="admin_matches")],
+                [InlineKeyboardButton("🔙 رجوع للوحة التحكم", callback_data="admin_panel")],
+            ]),
+        )
+    except Exception as e:
+        await query.edit_message_text(
+            f"❌ فشل الاتصال بالخادم الخارجي.\n\nالخطأ: `{str(e)[:100]}`\n\nتأكد من الاتصال بالإنترنت وحاول مجدداً.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 رجوع", callback_data="admin_matches")]]
+            ),
+        )
 
 
 @admin_only

@@ -41,6 +41,7 @@ from handlers.admin import (
     admin_lottery, admin_draw_lottery_start,
     admin_lottery_first, admin_lottery_second, admin_lottery_third,
     admin_cancel,
+    admin_sync_matches,
     admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
     admin_delete_match, admin_confirm_delete_match,
     ADMIN_SET_TRC20, ADMIN_SET_BEP20,
@@ -226,6 +227,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_approve_withdrawal, pattern="^admin_approve_wd_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_reject_withdrawal, pattern="^admin_reject_wd_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_matches, pattern="^admin_matches$"))
+    app.add_handler(CallbackQueryHandler(admin_sync_matches, pattern="^admin_sync_matches$"))
     app.add_handler(CallbackQueryHandler(admin_match_detail, pattern="^admin_match_detail_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_delete_match, pattern="^admin_delete_match_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_confirm_delete_match, pattern="^admin_confirm_delete_\\d+$"))
