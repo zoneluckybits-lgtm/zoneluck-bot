@@ -8,6 +8,13 @@ from sync_matches import fetch_upcoming_matches, sync_matches_to_db, cleanup_pas
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
+_CANCEL_TO_MATCHES_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔙 إلغاء / رجوع للمباريات", callback_data="admin_cancel_to_matches")]
+])
+_CANCEL_TO_WALLETS_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔙 إلغاء / رجوع للمحافظ", callback_data="admin_cancel_to_wallets")]
+])
+
 ADMIN_SET_TRC20, ADMIN_SET_BEP20 = range(300, 302)
 ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME = range(310, 313)
 ADMIN_RESULT_MATCH_ID, ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY = range(320, 325)
@@ -589,11 +596,77 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def admin_cancel_to_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel any match-related conversation and return to matches list."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.clear()
+    cleanup_past_unresolved_matches()
+    with db() as conn:
+        upcoming = conn.execute(
+            "SELECT * FROM matches WHERE status='upcoming' ORDER BY match_time ASC LIMIT 20"
+        ).fetchall()
+        finished = conn.execute(
+            "SELECT * FROM matches WHERE status IN ('finished','expired','cancelled') ORDER BY match_time DESC LIMIT 5"
+        ).fetchall()
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة مباراة يدوياً", callback_data="admin_add_match")],
+        [InlineKeyboardButton("🔄 استيراد تلقائي من كأس العالم", callback_data="admin_sync_matches")],
+    ]
+    if upcoming:
+        keyboard.append([InlineKeyboardButton("━━━ القادمة ━━━", callback_data="noop")])
+        for m in upcoming:
+            keyboard.append([InlineKeyboardButton(
+                f"⏳ {m['team_home']} vs {m['team_away']} | {m['match_time'][:16]}",
+                callback_data=f"admin_match_detail_{m['id']}",
+            )])
+    if finished:
+        keyboard.append([InlineKeyboardButton("━━━ المنتهية ━━━", callback_data="noop")])
+        for m in finished:
+            icon = {"finished": "✅", "expired": "⌛", "cancelled": "❌"}.get(m["status"], "❓")
+            keyboard.append([InlineKeyboardButton(
+                f"{icon} {m['team_home']} vs {m['team_away']} | {m['match_time'][:10]}",
+                callback_data=f"admin_match_detail_{m['id']}",
+            )])
+    keyboard.append([InlineKeyboardButton("🔙 رجوع للوحة التحكم", callback_data="admin_panel")])
+    await query.edit_message_text(
+        f"⚽ *إدارة المباريات*\n\nالقادمة: {len(upcoming)} | المنتهية: {len(finished)}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return ConversationHandler.END
+
+
+async def admin_cancel_to_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel wallet conversation and return to wallet settings."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.clear()
+    trc20 = get_setting("trc20_address")
+    bep20 = get_setting("bep20_address")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✏️ تعديل TRC-20", callback_data="admin_set_trc20")],
+        [InlineKeyboardButton("✏️ تعديل BEP-20", callback_data="admin_set_bep20")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")],
+    ])
+    await query.edit_message_text(
+        f"⚙️ *عناوين محافظ الإيداع:*\n\n"
+        f"🔵 TRC-20: `{trc20 or 'غير مضبوط'}`\n"
+        f"🟡 BEP-20: `{bep20 or 'غير مضبوط'}`",
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
+    return ConversationHandler.END
+
+
 @admin_only
 async def admin_add_match_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("⚽ أدخل اسم الفريق الأول (المضيف):")
+    await query.edit_message_text(
+        "⚽ أدخل اسم الفريق الأول (المضيف):",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
+    )
     return ADMIN_ADD_MATCH_HOME
 
 
@@ -601,7 +674,10 @@ async def admin_add_match_home(update: Update, context: ContextTypes.DEFAULT_TYP
     if update.effective_user.id != ADMIN_ID:
         return ConversationHandler.END
     context.user_data["match_home"] = update.message.text.strip()
-    await update.message.reply_text("⚽ أدخل اسم الفريق الثاني (الضيف):")
+    await update.message.reply_text(
+        "⚽ أدخل اسم الفريق الثاني (الضيف):",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
+    )
     return ADMIN_ADD_MATCH_AWAY
 
 
@@ -610,7 +686,8 @@ async def admin_add_match_away(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
     context.user_data["match_away"] = update.message.text.strip()
     await update.message.reply_text(
-        "🕐 أدخل موعد المباراة بالصيغة التالية:\nYYYY-MM-DD HH:MM\nمثال: 2025-07-15 20:00"
+        "🕐 أدخل موعد المباراة بالصيغة التالية:\nYYYY-MM-DD HH:MM\nمثال: 2025-07-15 20:00",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_ADD_MATCH_TIME
 
@@ -700,7 +777,8 @@ async def admin_enter_result_start(update: Update, context: ContextTypes.DEFAULT
 
     await query.edit_message_text(
         f"📋 إدخال نتيجة: {m['team_home']} vs {m['team_away']}\n\n"
-        f"أدخل النتيجة النهائية (مثال: 2-1):"
+        f"أدخل النتيجة النهائية (مثال: 2-1):",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_RESULT_SCORE
 
@@ -714,12 +792,16 @@ async def admin_result_score(update: Update, context: ContextTypes.DEFAULT_TYPE)
         assert len(parts) == 2
         int(parts[0]), int(parts[1])
     except (ValueError, AssertionError):
-        await update.message.reply_text("❌ صيغة غير صحيحة. مثال: 2-1")
+        await update.message.reply_text(
+            "❌ صيغة غير صحيحة. مثال: 2-1",
+            reply_markup=_CANCEL_TO_MATCHES_KB,
+        )
         return ADMIN_RESULT_SCORE
 
     context.user_data["result_score"] = score
     await update.message.reply_text(
-        "🟡 أدخل أسماء لاعبي البطاقات الصفراء (مفصولة بفاصلة)، أو أرسل `-` إذا لا يوجد:"
+        "🟡 أدخل أسماء لاعبي البطاقات الصفراء (مفصولة بفاصلة)، أو أرسل `-` إذا لا يوجد:",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_RESULT_YELLOW
 
@@ -730,7 +812,8 @@ async def admin_result_yellow(update: Update, context: ContextTypes.DEFAULT_TYPE
     yellow = update.message.text.strip()
     context.user_data["result_yellow"] = "" if yellow == "-" else yellow
     await update.message.reply_text(
-        "🔴 أدخل أسماء لاعبي البطاقات الحمراء (مفصولة بفاصلة)، أو أرسل `-` إذا لا يوجد:"
+        "🔴 أدخل أسماء لاعبي البطاقات الحمراء (مفصولة بفاصلة)، أو أرسل `-` إذا لا يوجد:",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_RESULT_RED
 
@@ -741,7 +824,8 @@ async def admin_result_red(update: Update, context: ContextTypes.DEFAULT_TYPE):
     red = update.message.text.strip()
     context.user_data["result_red"] = "" if red == "-" else red
     await update.message.reply_text(
-        "⚡ أدخل نتيجة ركلات الترجيح (مثال: 4-3)، أو أرسل `-` إذا لم تصل المباراة لركلات:"
+        "⚡ أدخل نتيجة ركلات الترجيح (مثال: 4-3)، أو أرسل `-` إذا لم تصل المباراة لركلات:",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_RESULT_PENALTY
 
@@ -863,7 +947,10 @@ async def admin_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_set_trc20_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("🔵 أدخل عنوان محفظة TRC-20 الجديد:")
+    await query.edit_message_text(
+        "🔵 أدخل عنوان محفظة TRC-20 الجديد:",
+        reply_markup=_CANCEL_TO_WALLETS_KB,
+    )
     return ADMIN_SET_TRC20
 
 
@@ -884,7 +971,10 @@ async def admin_set_trc20(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_set_bep20_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("🟡 أدخل عنوان محفظة BEP-20 الجديد:")
+    await query.edit_message_text(
+        "🟡 أدخل عنوان محفظة BEP-20 الجديد:",
+        reply_markup=_CANCEL_TO_WALLETS_KB,
+    )
     return ADMIN_SET_BEP20
 
 
@@ -1110,6 +1200,7 @@ async def admin_edit_match_start(update: Update, context: ContextTypes.DEFAULT_T
         f"الفريق الأول الحالي: *{m['team_home']}*\n\n"
         f"أدخل الاسم الجديد للفريق الأول، أو أرسل `-` للإبقاء على الاسم الحالي:",
         parse_mode="Markdown",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_EDIT_MATCH_HOME
 
@@ -1125,6 +1216,7 @@ async def admin_edit_match_home(update: Update, context: ContextTypes.DEFAULT_TY
         f"الفريق الثاني الحالي: *{current['team_away']}*\n\n"
         f"أدخل الاسم الجديد للفريق الثاني، أو أرسل `-` للإبقاء على الاسم الحالي:",
         parse_mode="Markdown",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_EDIT_MATCH_AWAY
 
@@ -1142,6 +1234,7 @@ async def admin_edit_match_away(update: Update, context: ContextTypes.DEFAULT_TY
         f"مثال: 2025-07-15 20:00\n\n"
         f"أو أرسل `-` للإبقاء على الموعد الحالي:",
         parse_mode="Markdown",
+        reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_EDIT_MATCH_TIME
 

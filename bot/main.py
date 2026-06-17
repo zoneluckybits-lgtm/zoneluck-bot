@@ -42,6 +42,7 @@ from handlers.admin import (
     admin_lottery, admin_draw_lottery_start,
     admin_lottery_first, admin_lottery_second, admin_lottery_third,
     admin_lottery_cancel,
+    admin_cancel_to_matches, admin_cancel_to_wallets,
     admin_cancel,
     admin_sync_matches,
     admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
@@ -110,14 +111,17 @@ def main():
         per_message=False,
     )
 
+    _cancel_matches = CallbackQueryHandler(admin_cancel_to_matches, pattern="^admin_cancel_to_matches$")
+    _cancel_wallets = CallbackQueryHandler(admin_cancel_to_wallets, pattern="^admin_cancel_to_wallets$")
+
     admin_wallet_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(admin_set_trc20_start, pattern="^admin_set_trc20$"),
             CallbackQueryHandler(admin_set_bep20_start, pattern="^admin_set_bep20$"),
         ],
         states={
-            ADMIN_SET_TRC20: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_trc20)],
-            ADMIN_SET_BEP20: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_bep20)],
+            ADMIN_SET_TRC20: [_cancel_wallets, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_trc20)],
+            ADMIN_SET_BEP20: [_cancel_wallets, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_bep20)],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
         per_chat=True,
@@ -128,9 +132,9 @@ def main():
     admin_match_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_add_match_start, pattern="^admin_add_match$")],
         states={
-            ADMIN_ADD_MATCH_HOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_home)],
-            ADMIN_ADD_MATCH_AWAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_away)],
-            ADMIN_ADD_MATCH_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_time)],
+            ADMIN_ADD_MATCH_HOME: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_home)],
+            ADMIN_ADD_MATCH_AWAY: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_away)],
+            ADMIN_ADD_MATCH_TIME: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_match_time)],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
         per_chat=True,
@@ -141,9 +145,9 @@ def main():
     admin_edit_match_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_edit_match_start, pattern="^admin_edit_match_\\d+$")],
         states={
-            ADMIN_EDIT_MATCH_HOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_home)],
-            ADMIN_EDIT_MATCH_AWAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_away)],
-            ADMIN_EDIT_MATCH_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_time)],
+            ADMIN_EDIT_MATCH_HOME: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_home)],
+            ADMIN_EDIT_MATCH_AWAY: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_away)],
+            ADMIN_EDIT_MATCH_TIME: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_match_time)],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
         per_chat=True,
@@ -155,10 +159,10 @@ def main():
     admin_result_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_enter_result_start, pattern="^admin_enter_result_")],
         states={
-            ADMIN_RESULT_SCORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_score)],
-            ADMIN_RESULT_YELLOW: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_yellow)],
-            ADMIN_RESULT_RED: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_red)],
-            ADMIN_RESULT_PENALTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_penalty)],
+            ADMIN_RESULT_SCORE:   [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_score)],
+            ADMIN_RESULT_YELLOW:  [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_yellow)],
+            ADMIN_RESULT_RED:     [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_red)],
+            ADMIN_RESULT_PENALTY: [_cancel_matches, MessageHandler(filters.TEXT & ~filters.COMMAND, admin_result_penalty)],
         },
         fallbacks=[CommandHandler("cancel", admin_cancel)],
         per_chat=True,
