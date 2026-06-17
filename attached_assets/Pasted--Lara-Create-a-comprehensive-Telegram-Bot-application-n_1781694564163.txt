@@ -1,0 +1,61 @@
+> Lara:
+Create a comprehensive Telegram Bot application named "zone luck" using Python (recommended libraries: pyTelegramBotAPI or python-telegram-bot). The application needs a robust backend (using SQLite or PostgreSQL) and an Admin Control Panel (either via dedicated Telegram admin commands or a simple web dashboard) to manage matches, odds, transactions, lottery results, and detailed user monitoring.
+
+Here is the detailed specification of the application:
+
+### 1. User Management & Wallet System
+*   Deposit/Withdrawal Limits: Minimum deposit is $5. Minimum withdrawal is $10.
+*   Deposit Flow: When a user requests a deposit, they select between two networks: USDT (TRC-20 / Tron) or USDT (BEP-20 / BNB Smart Chain). The bot will display the respective crypto wallet address, which the Admin sets via the Admin Panel. The user submits their transaction hash/proof for Admin review.
+*   Withdrawal Flow: Users request a withdrawal by providing their destination wallet address and the amount. The system manages this through a conceptual "Treasury Wallet" (funded by the owner). The Admin must manually approve or reject withdrawal requests from the Admin Panel. Approved requests deduct the balance from the database.
+
+### 2. Referral System
+*   Link Generation: Every user can generate a unique referral link directly from the bot menu to invite their friends.
+*   Reward Logic: When a referred friend joins via the link and completes their first successful deposit (approved by the admin), the referrer automatically receives a fixed reward of $0.50 credited directly to their account balance.
+*   Tracking: The system must build a hierarchical structure to track which user invited whom, creating a clear referral relationship tree for each user.
+
+### 3. World Cup Betting Module
+The bot must display matches categorized into three views: "Today's Matches", "This Week's Matches", and "All Matches". Users can select a match and place specific types of bets with fixed entry fees and fixed winning payouts:
+
+*   Match Correct Score Bet: 
+    *   Entry Fee: $2
+    *   Winning Payout: $25
+    *   Logic: User predicts the exact final score (e.g., 2-1).
+*   Yellow Card Bet: 
+    *   Entry Fee: $3
+    *   Winning Payout: $100
+    *   Logic: User specifies the exact player's name who will receive a yellow card during the match.
+*   Red Card Bet: 
+    *   Entry Fee: $4
+    *   Winning Payout: $150
+    *   Logic: User specifies the exact player's name who will receive a red card during the match.
+*   Penalty Shootout Score Bet: 
+    *   Entry Fee: $5
+    *   Winning Payout: $200
+    *   Logic: User predicts the exact score of the penalty shootout for both teams, applicable if the match goes to penalties.
+
+*   Settlement Logic: When a user wins a bet, the bot must immediately send them a Telegram notification stating that their bet won, and automatically credit the winning payout amount to their account balance.
+
+### 4. Lottery (Yanaseeb) Module
+*   Ticket Purchase: Users can buy lottery tickets. Each ticket costs exactly $5. The system automatically generates a unique ticket number upon purchase.
+*   Prize Tiers: 
+    *   1st Prize: $100
+    *   2nd Prize: $200
+    *   3rd Prize: $500
+*   Draw Mechanism: In the Admin Panel, the Admin can view all system-generated active ticket numbers. The Admin manually selects the winning ticket numbers for each prize tier.
+*   Notification: Once the Admin picks the winners, the bot automatically sends a Telegram notification to the winning users, stating their ticket won along with the specific prize value, and updates their balance.
+
+### 5. Advanced Admin Control Panel (Updated)
+The Admin interface must support the following capabilities:
+*   User Management Dashboard: The Admin must be able to view a complete list of all registered users. For each individual user, the Admin can inspect:
+
+> Lara:
+1. Current wallet balance.
+    2. Detailed history of all their bets (placed, won, lost, pending).
+    3. Detailed history of all their withdrawals and deposits.
+    4. The Referral Tree ( الشجرة ): A visual or structured list showing exactly who invited this user, and a list of all users invited by this specific user (downline/referrals).
+*   Match & Content Management: Add, update, and manage World Cup matches, schedules, and categories (Today, This Week, All).
+*   Wallet Configurations: Set and update the Deposit Wallet Addresses for both TRC-20 and BEP-20 networks.
+*   Transaction Processing: Review pending deposits and manually approve/reject them to credit user balances (and trigger the referral reward if applicable). Review pending withdrawals and mark them as approved/rejected.
+*   Bet & Lottery Resolutions: Input the official match results to trigger automatic bet resolutions/user payouts, and input the winning lottery ticket numbers for the 1st, 2nd, and 3rd prizes.
+
+Please build the full responsive database schema supporting foreign keys for user referrals, state management handlers for Telegram conversations, and ensure clean error handling for all balance operations.
