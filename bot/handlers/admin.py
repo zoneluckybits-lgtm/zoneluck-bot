@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
 from utils import get_user_by_telegram_id, get_referral_tree, format_user_name, set_setting, get_setting
-from sync_matches import fetch_upcoming_matches, sync_matches_to_db
+from sync_matches import fetch_upcoming_matches, sync_matches_to_db, cleanup_past_unresolved_matches
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
@@ -541,27 +541,49 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    cleanup_past_unresolved_matches()
+
     with db() as conn:
-        matches = conn.execute(
-            "SELECT * FROM matches ORDER BY match_time DESC LIMIT 15"
+        upcoming = conn.execute(
+            "SELECT * FROM matches WHERE status='upcoming' ORDER BY match_time ASC LIMIT 20"
+        ).fetchall()
+        finished = conn.execute(
+            "SELECT * FROM matches WHERE status IN ('finished','expired','cancelled') ORDER BY match_time DESC LIMIT 5"
         ).fetchall()
 
     keyboard = [
-        [InlineKeyboardButton("➕ إضافة مباراة", callback_data="admin_add_match")],
+        [InlineKeyboardButton("➕ إضافة مباراة يدوياً", callback_data="admin_add_match")],
         [InlineKeyboardButton("🔄 استيراد تلقائي من كأس العالم", callback_data="admin_sync_matches")],
     ]
-    for m in matches:
-        status_icon = {"upcoming": "⏳", "finished": "✅", "cancelled": "❌"}.get(m["status"], "❓")
-        keyboard.append([
-            InlineKeyboardButton(
-                f"{status_icon} {m['team_home']} vs {m['team_away']} | {m['match_time'][:10]}",
-                callback_data=f"admin_match_detail_{m['id']}",
-            )
-        ])
+
+    if upcoming:
+        keyboard.append([InlineKeyboardButton("━━━ القادمة ━━━", callback_data="noop")])
+        for m in upcoming:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"⏳ {m['team_home']} vs {m['team_away']} | {m['match_time'][:16]}",
+                    callback_data=f"admin_match_detail_{m['id']}",
+                )
+            ])
+    else:
+        keyboard.append([InlineKeyboardButton("ℹ️ لا توجد مباريات قادمة", callback_data="noop")])
+
+    if finished:
+        keyboard.append([InlineKeyboardButton("━━━ المنتهية ━━━", callback_data="noop")])
+        for m in finished:
+            status_icon = {"finished": "✅", "expired": "⌛", "cancelled": "❌"}.get(m["status"], "❓")
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{status_icon} {m['team_home']} vs {m['team_away']} | {m['match_time'][:10]}",
+                    callback_data=f"admin_match_detail_{m['id']}",
+                )
+            ])
+
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")])
 
     await query.edit_message_text(
-        "⚽ *إدارة المباريات:*",
+        f"⚽ *إدارة المباريات*\n\n"
+        f"القادمة: {len(upcoming)} | المنتهية: {len(finished)}",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )

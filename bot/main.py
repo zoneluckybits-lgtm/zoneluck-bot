@@ -9,6 +9,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     ConversationHandler,
+    ContextTypes,
     filters,
 )
 
@@ -233,6 +234,11 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_confirm_delete_match, pattern="^admin_confirm_delete_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_wallets, pattern="^admin_wallets$"))
     app.add_handler(CallbackQueryHandler(admin_lottery, pattern="^admin_lottery$"))
+
+    async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.callback_query.answer()
+
+    app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
 
     logger.info("Zone Luck Bot is starting...")
     app.run_polling(drop_pending_updates=True)

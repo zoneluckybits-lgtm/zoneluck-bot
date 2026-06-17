@@ -1,12 +1,44 @@
 import httpx
+from datetime import datetime, timezone
 from database import db
 
 THESPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/3"
 WORLD_CUP_LEAGUE_ID = "4429"
 
 
+def _is_finished(event: dict) -> bool:
+    """Return True if the match already has a result (played)."""
+    home_score = event.get("intHomeScore")
+    away_score = event.get("intAwayScore")
+    status = (event.get("strStatus") or "").lower()
+    finished_keywords = {"ft", "aet", "pen", "finished", "complete", "مكتمل"}
+    if status in finished_keywords:
+        return True
+    if home_score not in (None, "", "null") and away_score not in (None, "", "null"):
+        try:
+            int(home_score)
+            int(away_score)
+            return True
+        except (ValueError, TypeError):
+            pass
+    return False
+
+
+def _is_past_date(date_str: str, time_str: str) -> bool:
+    """Return True if the match date+time is strictly in the past."""
+    if not date_str:
+        return False
+    try:
+        time_part = (time_str or "00:00")[:5]
+        dt = datetime.strptime(f"{date_str} {time_part}", "%Y-%m-%d %H:%M")
+        now = datetime.utcnow()
+        return dt < now
+    except ValueError:
+        return False
+
+
 async def fetch_upcoming_matches() -> list[dict]:
-    """Fetch upcoming World Cup matches from TheSportsDB."""
+    """Fetch upcoming World Cup matches from TheSportsDB (not yet played)."""
     results = []
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(
@@ -31,7 +63,14 @@ async def fetch_upcoming_matches() -> list[dict]:
                 results.append(e)
                 seen_ids.add(e.get("idEvent"))
 
-    return results
+    upcoming = [
+        e for e in results
+        if not _is_finished(e) and not _is_past_date(
+            e.get("dateEvent", ""),
+            e.get("strTime", "") or e.get("strTimeLocal", ""),
+        )
+    ]
+    return upcoming
 
 
 def parse_match_time(date_str: str, time_str: str) -> str:
@@ -45,7 +84,7 @@ def parse_match_time(date_str: str, time_str: str) -> str:
 
 
 def sync_matches_to_db(events: list[dict]) -> tuple[int, int]:
-    """Insert new matches into DB, skip duplicates. Returns (added, skipped)."""
+    """Insert new upcoming matches into DB, skip duplicates. Returns (added, skipped)."""
     added = 0
     skipped = 0
 
@@ -77,3 +116,13 @@ def sync_matches_to_db(events: list[dict]) -> tuple[int, int]:
             added += 1
 
     return added, skipped
+
+
+def cleanup_past_unresolved_matches():
+    """Mark matches whose date has passed but are still 'upcoming' as 'expired'."""
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with db() as conn:
+        conn.execute(
+            "UPDATE matches SET status='expired' WHERE status='upcoming' AND match_time < ?",
+            (now,),
+        )
