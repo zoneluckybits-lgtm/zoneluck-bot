@@ -8,7 +8,7 @@ deploymentTarget = "vm"
 [[services]]
 localPort = 8080
 name = "Zone Luck Bot"
-paths = ["/api"]
+paths = ["/"]
 
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"
@@ -17,3 +17,9 @@ run = "pnpm --filter @workspace/api-server run dev"
 
 [services.production.run]
 args = ["sh", "-c", "cd bot && pip install -r requirements.txt -q && python main.py"]
+
+[services.production.run.env]
+PORT = "8080"
+
+[services.production.health.startup]
+path = "/"

@@ -1,6 +1,8 @@
 import os
 import sys
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import Update
 from telegram.ext import (
@@ -64,6 +66,24 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, *args):
+        pass
+
+
+def _start_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    logger.info(f"Health server listening on port {port}")
+    server.serve_forever()
 
 
 def main():
@@ -254,6 +274,11 @@ def main():
         await update.callback_query.answer()
 
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
+
+    # شغّل خادم الصحة في الإنتاج فقط (مطلوب لـ Replit deployment)
+    if os.environ.get("REPLIT_DEPLOYMENT"):
+        health_thread = threading.Thread(target=_start_health_server, daemon=True)
+        health_thread.start()
 
     logger.info("Zone Luck Bot is starting...")
     app.run_polling(drop_pending_updates=True)
