@@ -3,6 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
 from utils import get_user_by_telegram_id, get_setting
+from blockchain import verify_tx
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
@@ -99,37 +100,77 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ أرسل رقم المعاملة أو صورة الإثبات.")
         return DEPOSIT_HASH
 
-    amount = context.user_data.get("deposit_amount", 0)
+    # ── التحقق التلقائي من الهاش عبر البلوكشين ──
+    verified_amount = 0.0
+    verify_status = ""
+    verify_icon = ""
+
+    if tx_hash:
+        checking_msg = await update.message.reply_text("🔍 جاري التحقق من العملية على البلوكشين...")
+        result = await verify_tx(network, tx_hash)
+        try:
+            await checking_msg.delete()
+        except Exception:
+            pass
+
+        if result["ok"]:
+            verified_amount = result["amount"]
+            confirmed = result.get("confirmed", False)
+            if confirmed:
+                verify_status = f"✅ عملية مؤكدة | المبلغ: ${verified_amount:.2f} USDT"
+                verify_icon = "✅"
+            else:
+                verify_status = f"⏳ عملية معلقة (غير مؤكدة بعد) | المبلغ: ${verified_amount:.2f} USDT"
+                verify_icon = "⏳"
+        else:
+            verify_status = f"⚠️ {result['error']}"
+            verify_icon = "⚠️"
+            await update.message.reply_text(
+                f"⚠️ *تنبيه التحقق:*\n{result['error']}\n\n"
+                f"سيتم إرسال الطلب للمراجعة اليدوية من الأدمن.",
+                parse_mode="Markdown",
+            )
+
+    user_amount = context.user_data.get("deposit_amount", 0)
+    final_amount = verified_amount if verified_amount > 0 else user_amount
 
     with db() as conn:
         cursor = conn.execute(
             "INSERT INTO deposits (user_id, network, tx_hash, proof_file_id, amount) VALUES (?, ?, ?, ?, ?)",
-            (db_user["id"], network, tx_hash, proof_file_id, amount),
+            (db_user["id"], network, tx_hash, proof_file_id, final_amount),
         )
         deposit_id = cursor.lastrowid
 
     await update.message.reply_text(
-        f"✅ تم إرسال طلب الإيداع بنجاح!\n"
-        f"رقم الطلب: #{deposit_id}\n"
-        f"سيتم مراجعته من الأدمن قريباً.",
+        f"📥 *تم استلام طلب الإيداع #{deposit_id}*\n\n"
+        f"🌐 الشبكة: {network}\n"
+        f"🔗 الهاش: `{tx_hash or 'صورة إثبات'}`\n"
+        f"🔍 التحقق: {verify_status or 'سيُراجَع يدوياً'}\n\n"
+        f"سيقوم الأدمن بمراجعة الطلب وتأكيده قريباً.",
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
         ),
     )
 
     try:
-        proof_text = f"Hash: `{tx_hash}`" if tx_hash else "📎 صورة إثبات"
+        proof_text = f"`{tx_hash}`" if tx_hash else "📎 صورة إثبات"
+        admin_text = (
+            f"📥 *طلب إيداع جديد #{deposit_id}* {verify_icon}\n\n"
+            f"👤 المستخدم: {user.full_name} (@{user.username or 'بدون يوزر'})\n"
+            f"🌐 الشبكة: {network}\n"
+            f"🔗 الهاش: {proof_text}\n"
+            f"💵 المبلغ: ${final_amount:.2f} USDT\n"
+            f"🔍 التحقق: {verify_status or 'مرسل بصورة إثبات — راجع يدوياً'}"
+        )
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📥 *طلب إيداع جديد #{deposit_id}*\n\n"
-                 f"👤 المستخدم: {user.full_name} (@{user.username})\n"
-                 f"🌐 الشبكة: {network}\n"
-                 f"🔗 {proof_text}",
+            text=admin_text,
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton(f"✅ قبول", callback_data=f"admin_approve_deposit_{deposit_id}"),
-                    InlineKeyboardButton(f"❌ رفض", callback_data=f"admin_reject_deposit_{deposit_id}"),
+                    InlineKeyboardButton("✅ قبول", callback_data=f"admin_approve_deposit_{deposit_id}"),
+                    InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_deposit_{deposit_id}"),
                 ]
             ]),
         )
