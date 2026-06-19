@@ -1,10 +1,10 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
-from utils import get_user_by_telegram_id, generate_ticket_number
+from utils import get_user_by_telegram_id, generate_ticket_number, get_user_lang
+from lang import t
 
 LOTTERY_CONFIRM = 200
-
 TICKET_PRICE = 5.0
 PRIZES = {1: 100.0, 2: 200.0, 3: 500.0}
 
@@ -13,6 +13,7 @@ async def lottery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     with db() as conn:
@@ -26,29 +27,23 @@ async def lottery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (db_user["id"],),
         ).fetchall()
 
-    text = f"🎟 *يانصيب Zone Luck*\n\n"
-    text += f"💵 سعر التذكرة: $5\n"
-    text += f"🏆 الجوائز:\n"
-    text += f"  🥇 الأولى: $100\n"
-    text += f"  🥈 الثانية: $200\n"
-    text += f"  🥉 الثالثة: $500\n\n"
-    text += f"💰 رصيدك: ${db_user['balance']:.2f}\n\n"
+    text = t("lottery_title", lang, balance=db_user["balance"])
 
     if my_tickets:
-        text += f"🎫 *تذاكرك النشطة:*\n"
-        for t in my_tickets[:5]:
-            text += f"  • `{t['ticket_number']}`\n"
+        text += t("lottery_active_tickets", lang)
+        for tk in my_tickets[:5]:
+            text += f"  • `{tk['ticket_number']}`\n"
         if len(my_tickets) > 5:
-            text += f"  ... و{len(my_tickets) - 5} أخرى\n"
+            text += t("lottery_more_tickets", lang, count=len(my_tickets) - 5)
 
     if won_tickets:
-        text += f"\n🏆 *تذاكر فائزة:*\n"
-        for t in won_tickets:
-            text += f"  🎉 `{t['ticket_number']}` — ${t['prize_amount']:.2f}\n"
+        text += t("lottery_won_tickets", lang)
+        for tk in won_tickets:
+            text += f"  🎉 `{tk['ticket_number']}` — ${tk['prize_amount']:.2f}\n"
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎟 شراء تذكرة ($5)", callback_data="lottery_buy")],
-        [InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")],
+        [InlineKeyboardButton(t("btn_buy_ticket", lang), callback_data="lottery_buy")],
+        [InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")],
     ])
 
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
@@ -58,29 +53,25 @@ async def lottery_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     if db_user["balance"] < TICKET_PRICE:
         await query.edit_message_text(
-            f"❌ رصيدك غير كافٍ لشراء تذكرة.\n"
-            f"رصيدك: ${db_user['balance']:.2f}\n"
-            f"سعر التذكرة: $5",
+            t("lottery_insufficient", lang, balance=db_user["balance"]),
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data="lottery_menu")]]
+                [[InlineKeyboardButton(t("btn_back_short", lang), callback_data="lottery_menu")]]
             ),
         )
         return ConversationHandler.END
 
     await query.edit_message_text(
-        f"🎟 *شراء تذكرة يانصيب*\n\n"
-        f"السعر: $5\n"
-        f"رصيدك بعد الشراء: ${db_user['balance'] - TICKET_PRICE:.2f}\n\n"
-        f"هل تريد تأكيد الشراء؟",
+        t("lottery_confirm_msg", lang, after=db_user["balance"] - TICKET_PRICE),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ تأكيد", callback_data="lottery_confirm"),
-                InlineKeyboardButton("❌ إلغاء", callback_data="lottery_menu"),
+                InlineKeyboardButton(t("btn_confirm", lang), callback_data="lottery_confirm"),
+                InlineKeyboardButton(t("btn_cancel", lang), callback_data="lottery_menu"),
             ]
         ]),
     )
@@ -90,10 +81,11 @@ async def lottery_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     if db_user["balance"] < TICKET_PRICE:
-        await query.edit_message_text("❌ رصيدك غير كافٍ.")
+        await query.edit_message_text(t("lottery_insufficient_short", lang))
         return
 
     ticket_number = generate_ticket_number()
@@ -109,12 +101,9 @@ async def lottery_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await query.edit_message_text(
-        f"✅ *تم شراء التذكرة بنجاح!*\n\n"
-        f"🎟 رقم تذكرتك: `{ticket_number}`\n"
-        f"احتفظ بهذا الرقم — سيُعلن عن النتائج قريباً!\n\n"
-        f"بالتوفيق! 🍀",
+        t("lottery_bought", lang, ticket=ticket_number),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")]]
         ),
     )
