@@ -85,6 +85,17 @@ STRINGS = {
 
         "choose_language": "🌐 اختر لغتك:\n\nChoose your language:",
         "language_set": "✅ تم تغيير اللغة إلى العربية.",
+
+        "notify_deposit_approved": "✅ *تم قبول إيداعك!*\n\nالمبلغ المُضاف: *${amount:.2f}*\nشكراً لك!",
+        "notify_deposit_rejected": "❌ *تم رفض طلب إيداعك #{dep_id}*\n\nتواصل مع الدعم إذا كان لديك استفسار.",
+        "notify_withdraw_approved": "✅ *تم قبول طلب سحبك!*\n\nالمبلغ: *${amount:.2f}*\nسيصلك قريباً. 💸",
+        "notify_withdraw_rejected": "❌ *تم رفض طلب سحبك #{wd_id}*\n\nتم إعادة المبلغ *${amount:.2f}* إلى رصيدك.",
+        "notify_referral_reward": "🎉 *مكافأة الإحالة!*\n\nصديقك الذي دعوته أكمل أول إيداع ناجح!\nتم إضافة $0.50 إلى رصيدك. 🎁",
+        "notify_bet_won": "🎉 *مبروك! فزت في رهانك!*\n\n⚽ نوع الرهان: {bet_type}\n🎯 توقعك: {prediction}\n💰 تم إضافة *${payout:.2f}* إلى رصيدك!",
+        "notify_lottery_won": "🎉 *مبروك! فزت في اليانصيب!*\n\n🎟 رقم تذكرتك: `{ticket}`\n🏆 الجائزة {tier}: *${prize:.2f}*\n\nتم إضافة المبلغ إلى رصيدك! 💰",
+        "lottery_tier_1": "🥇 الأولى",
+        "lottery_tier_2": "🥈 الثانية",
+        "lottery_tier_3": "🥉 الثالثة",
     },
 
     "en": {
@@ -173,6 +184,17 @@ STRINGS = {
 
         "choose_language": "🌐 اختر لغتك:\n\nChoose your language:",
         "language_set": "✅ Language set to English.",
+
+        "notify_deposit_approved": "✅ *Your deposit has been approved!*\n\nAmount added: *${amount:.2f}*\nThank you!",
+        "notify_deposit_rejected": "❌ *Your deposit request #{dep_id} was rejected*\n\nContact support if you have questions.",
+        "notify_withdraw_approved": "✅ *Your withdrawal was approved!*\n\nAmount: *${amount:.2f}*\nWill be sent shortly. 💸",
+        "notify_withdraw_rejected": "❌ *Your withdrawal request #{wd_id} was rejected*\n\nAmount *${amount:.2f}* has been returned to your balance.",
+        "notify_referral_reward": "🎉 *Referral Reward!*\n\nYour referred friend completed their first deposit!\n$0.50 has been added to your balance. 🎁",
+        "notify_bet_won": "🎉 *Congratulations! You won your bet!*\n\n⚽ Bet type: {bet_type}\n🎯 Your prediction: {prediction}\n💰 *${payout:.2f}* added to your balance!",
+        "notify_lottery_won": "🎉 *Congratulations! You won the lottery!*\n\n🎟 Your ticket: `{ticket}`\n🏆 Prize {tier}: *${prize:.2f}*\n\nAmount added to your balance! 💰",
+        "lottery_tier_1": "🥇 1st Place",
+        "lottery_tier_2": "🥈 2nd Place",
+        "lottery_tier_3": "🥉 3rd Place",
     },
 }
 
