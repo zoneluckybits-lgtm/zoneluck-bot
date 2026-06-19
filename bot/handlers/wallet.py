@@ -2,8 +2,9 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
-from utils import get_user_by_telegram_id, get_setting
+from utils import get_user_by_telegram_id, get_setting, get_user_lang
 from blockchain import verify_tx
+from lang import t
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
@@ -15,21 +16,19 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📥 إيداع", callback_data="deposit_start"),
-            InlineKeyboardButton("📤 سحب", callback_data="withdraw_start"),
+            InlineKeyboardButton(t("btn_deposit", lang), callback_data="deposit_start"),
+            InlineKeyboardButton(t("btn_withdraw", lang), callback_data="withdraw_start"),
         ],
-        [InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")],
+        [InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")],
     ])
 
     await query.edit_message_text(
-        f"💰 *محفظتك*\n\n"
-        f"الرصيد الحالي: *${db_user['balance']:.2f}*\n\n"
-        f"الحد الأدنى للإيداع: $5\n"
-        f"الحد الأدنى للسحب: $10",
+        t("wallet_title", lang, balance=db_user["balance"]),
         parse_mode="Markdown",
         reply_markup=keyboard,
     )
@@ -38,16 +37,17 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def deposit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    lang = get_user_lang(query.from_user.id)
 
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔵 USDT TRC-20 (Tron)", callback_data="deposit_trc20"),
             InlineKeyboardButton("🟡 USDT BEP-20 (BNB)", callback_data="deposit_bep20"),
         ],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="wallet")],
+        [InlineKeyboardButton(t("btn_back_short", lang), callback_data="wallet")],
     ])
     await query.edit_message_text(
-        "📥 *طلب إيداع*\n\nاختر الشبكة:",
+        t("deposit_title", lang),
         parse_mode="Markdown",
         reply_markup=keyboard,
     )
@@ -56,6 +56,7 @@ async def deposit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def deposit_network_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    lang = get_user_lang(query.from_user.id)
 
     network = "TRC-20" if query.data == "deposit_trc20" else "BEP-20"
     context.user_data["deposit_network"] = network
@@ -65,18 +66,15 @@ async def deposit_network_selected(update: Update, context: ContextTypes.DEFAULT
 
     if not address:
         await query.edit_message_text(
-            "⚠️ عنوان المحفظة غير متوفر حالياً. تواصل مع الأدمن.",
+            t("deposit_no_address", lang),
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data="wallet")]]
+                [[InlineKeyboardButton(t("btn_back_short", lang), callback_data="wallet")]]
             ),
         )
         return ConversationHandler.END
 
     await query.edit_message_text(
-        f"📥 *إيداع عبر USDT {network}*\n\n"
-        f"أرسل USDT إلى هذا العنوان:\n`{address}`\n\n"
-        f"⚠️ الحد الأدنى: *$5*\n\n"
-        f"بعد التحويل، أرسل رقم المعاملة (Transaction Hash) أو صورة الإثبات:",
+        t("deposit_instructions", lang, network=network, address=address),
         parse_mode="Markdown",
     )
     return DEPOSIT_HASH
@@ -84,6 +82,7 @@ async def deposit_network_selected(update: Update, context: ContextTypes.DEFAULT
 
 async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
     network = context.user_data.get("deposit_network", "TRC-20")
 
@@ -97,16 +96,15 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
     elif update.message.document:
         proof_file_id = update.message.document.file_id
     else:
-        await update.message.reply_text("❌ أرسل رقم المعاملة أو صورة الإثبات.")
+        await update.message.reply_text(t("deposit_invalid_hash", lang))
         return DEPOSIT_HASH
 
-    # ── التحقق التلقائي من الهاش عبر البلوكشين ──
     verified_amount = 0.0
     verify_status = ""
     verify_icon = ""
 
     if tx_hash:
-        checking_msg = await update.message.reply_text("🔍 جاري التحقق من العملية على البلوكشين...")
+        checking_msg = await update.message.reply_text(t("deposit_verifying", lang))
         result = await verify_tx(network, tx_hash)
         try:
             await checking_msg.delete()
@@ -117,19 +115,15 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
             verified_amount = result["amount"]
             confirmed = result.get("confirmed", False)
             if confirmed:
-                verify_status = f"✅ عملية مؤكدة | المبلغ: ${verified_amount:.2f} USDT"
+                verify_status = f"✅ ${verified_amount:.2f} USDT"
                 verify_icon = "✅"
             else:
-                verify_status = f"⏳ عملية معلقة (غير مؤكدة بعد) | المبلغ: ${verified_amount:.2f} USDT"
+                verify_status = f"⏳ ${verified_amount:.2f} USDT"
                 verify_icon = "⏳"
         else:
             verify_status = f"⚠️ {result['error']}"
             verify_icon = "⚠️"
-            await update.message.reply_text(
-                f"⚠️ *تنبيه التحقق:*\n{result['error']}\n\n"
-                f"سيتم إرسال الطلب للمراجعة اليدوية من الأدمن.",
-                parse_mode="Markdown",
-            )
+            await update.message.reply_text(f"⚠️ {result['error']}")
 
     user_amount = context.user_data.get("deposit_amount", 0)
     final_amount = verified_amount if verified_amount > 0 else user_amount
@@ -142,26 +136,22 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
         deposit_id = cursor.lastrowid
 
     await update.message.reply_text(
-        f"📥 *تم استلام طلب الإيداع #{deposit_id}*\n\n"
-        f"🌐 الشبكة: {network}\n"
-        f"🔗 الهاش: `{tx_hash or 'صورة إثبات'}`\n"
-        f"🔍 التحقق: {verify_status or 'سيُراجَع يدوياً'}\n\n"
-        f"سيقوم الأدمن بمراجعة الطلب وتأكيده قريباً.",
+        t("deposit_pending", lang),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")]]
         ),
     )
 
     try:
-        proof_text = f"`{tx_hash}`" if tx_hash else "📎 صورة إثبات"
+        proof_text = f"`{tx_hash}`" if tx_hash else "📎 proof image"
         admin_text = (
-            f"📥 *طلب إيداع جديد #{deposit_id}* {verify_icon}\n\n"
-            f"👤 المستخدم: {user.full_name} (@{user.username or 'بدون يوزر'})\n"
-            f"🌐 الشبكة: {network}\n"
-            f"🔗 الهاش: {proof_text}\n"
-            f"💵 المبلغ: ${final_amount:.2f} USDT\n"
-            f"🔍 التحقق: {verify_status or 'مرسل بصورة إثبات — راجع يدوياً'}"
+            f"📥 *New Deposit #{deposit_id}* {verify_icon}\n\n"
+            f"👤 {user.full_name} (@{user.username or 'no username'})\n"
+            f"🌐 {network}\n"
+            f"🔗 {proof_text}\n"
+            f"💵 ${final_amount:.2f} USDT\n"
+            f"🔍 {verify_status or 'manual review'}"
         )
         await context.bot.send_message(
             chat_id=ADMIN_ID,
@@ -183,93 +173,59 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
-async def deposit_amount_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    context.user_data["deposit_step"] = "amount"
-    await query.edit_message_text(
-        "📥 أدخل المبلغ الذي تريد إيداعه (بالدولار):\n\n⚠️ الحد الأدنى: $5",
-    )
-    return DEPOSIT_NETWORK
-
-
-async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        amount = float(update.message.text.strip())
-    except ValueError:
-        await update.message.reply_text("❌ أدخل مبلغاً صحيحاً.")
-        return DEPOSIT_NETWORK
-
-    if amount < 5:
-        await update.message.reply_text("❌ الحد الأدنى للإيداع هو $5.")
-        return DEPOSIT_NETWORK
-
-    context.user_data["deposit_amount"] = amount
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🔵 USDT TRC-20 (Tron)", callback_data="deposit_trc20"),
-            InlineKeyboardButton("🟡 USDT BEP-20 (BNB)", callback_data="deposit_bep20"),
-        ],
-    ])
-    await update.message.reply_text(
-        f"💵 المبلغ: ${amount:.2f}\n\nاختر الشبكة:",
-        reply_markup=keyboard,
-    )
-    return DEPOSIT_NETWORK
-
-
 async def withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     if db_user["balance"] < 10:
         await query.edit_message_text(
-            f"❌ رصيدك غير كافٍ للسحب.\n"
-            f"الحد الأدنى للسحب: $10\n"
-            f"رصيدك الحالي: ${db_user['balance']:.2f}",
+            t("withdraw_insufficient", lang, balance=db_user["balance"]),
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data="wallet")]]
+                [[InlineKeyboardButton(t("btn_back_short", lang), callback_data="wallet")]]
             ),
         )
         return ConversationHandler.END
 
     await query.edit_message_text(
-        f"📤 *طلب سحب*\n\n"
-        f"رصيدك: ${db_user['balance']:.2f}\n"
-        f"الحد الأدنى: $10\n\n"
-        f"أرسل عنوان محفظتك (USDT):",
+        t("withdraw_start", lang, balance=db_user["balance"]),
         parse_mode="Markdown",
     )
     return WITHDRAW_ADDRESS
 
 
 async def withdraw_address_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["withdraw_address"] = update.message.text.strip()
-    await update.message.reply_text("💵 أدخل المبلغ المراد سحبه:")
+    lang = get_user_lang(update.effective_user.id)
+    db_user = get_user_by_telegram_id(update.effective_user.id)
+    address = update.message.text.strip()
+    context.user_data["withdraw_address"] = address
+
+    await update.message.reply_text(
+        t("withdraw_enter_amount", lang, address=address, balance=db_user["balance"]),
+        parse_mode="Markdown",
+    )
     return WITHDRAW_AMOUNT
 
 
 async def withdraw_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     try:
         amount = float(update.message.text.strip())
     except ValueError:
-        await update.message.reply_text("❌ أدخل مبلغاً صحيحاً.")
+        await update.message.reply_text(t("withdraw_invalid_amount", lang))
         return WITHDRAW_AMOUNT
 
     if amount < 10:
-        await update.message.reply_text("❌ الحد الأدنى للسحب هو $10.")
+        await update.message.reply_text(t("withdraw_min_error", lang))
         return WITHDRAW_AMOUNT
 
     if amount > db_user["balance"]:
-        await update.message.reply_text(
-            f"❌ رصيدك غير كافٍ. رصيدك: ${db_user['balance']:.2f}"
-        )
+        await update.message.reply_text(t("withdraw_insufficient", lang, balance=db_user["balance"]))
         return WITHDRAW_AMOUNT
 
     wallet_address = context.user_data.get("withdraw_address")
@@ -286,22 +242,20 @@ async def withdraw_amount_received(update: Update, context: ContextTypes.DEFAULT
         withdrawal_id = cursor.lastrowid
 
     await update.message.reply_text(
-        f"✅ تم إرسال طلب السحب!\n"
-        f"رقم الطلب: #{withdrawal_id}\n"
-        f"المبلغ: ${amount:.2f}\n"
-        f"سيتم معالجته من الأدمن قريباً.",
+        t("withdraw_success", lang, amount=amount),
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")]]
         ),
     )
 
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📤 *طلب سحب جديد #{withdrawal_id}*\n\n"
-                 f"👤 المستخدم: {user.full_name} (@{user.username})\n"
-                 f"💵 المبلغ: ${amount:.2f}\n"
-                 f"📍 العنوان: `{wallet_address}`",
+            text=f"📤 *New Withdrawal #{withdrawal_id}*\n\n"
+                 f"👤 {user.full_name} (@{user.username})\n"
+                 f"💵 ${amount:.2f}\n"
+                 f"📍 `{wallet_address}`",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [
@@ -318,11 +272,12 @@ async def withdraw_amount_received(update: Update, context: ContextTypes.DEFAULT
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang = get_user_lang(update.effective_user.id)
     context.user_data.clear()
     await update.message.reply_text(
-        "❌ تم الإلغاء.",
+        t("cancelled", lang),
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")]]
         ),
     )
     return ConversationHandler.END
