@@ -172,8 +172,25 @@ async def bet_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(
         t("bet_prompt", lang, name=name, fee=info["fee"], payout=info["payout"], prompt=prompt),
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton(t("btn_cancel", lang), callback_data="cancel_bet")]]
+        ),
     )
     return BET_PREDICTION
+
+
+async def cancel_bet_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    lang = get_user_lang(update.effective_user.id)
+    context.user_data.clear()
+    await query.edit_message_text(
+        t("cancelled", lang),
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="matches_menu")]]
+        ),
+    )
+    return ConversationHandler.END
 
 
 async def bet_prediction_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
