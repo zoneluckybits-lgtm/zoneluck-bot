@@ -782,8 +782,13 @@ async def admin_enter_result_start(update: Update, context: ContextTypes.DEFAULT
         m = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
 
     await query.edit_message_text(
-        f"📋 إدخال نتيجة: {m['team_home']} vs {m['team_away']}\n\n"
-        f"أدخل النتيجة النهائية (مثال: 2-1):",
+        f"📋 *إدخال نتيجة المباراة*\n\n"
+        f"🏠 الفريق الأول (يسار): *{m['team_home']}*\n"
+        f"✈️ الفريق الثاني (يمين): *{m['team_away']}*\n\n"
+        f"أدخل النتيجة بهذا الترتيب:\n"
+        f"`[أهداف {m['team_home']}]-[أهداف {m['team_away']}]`\n\n"
+        f"مثال: لو {m['team_home']} سجّل 2 و{m['team_away']} سجّل 1 → أرسل: `2-1`",
+        parse_mode="Markdown",
         reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_RESULT_SCORE
@@ -798,8 +803,13 @@ async def admin_result_score(update: Update, context: ContextTypes.DEFAULT_TYPE)
         assert len(parts) == 2
         int(parts[0]), int(parts[1])
     except (ValueError, AssertionError):
+        with db() as conn:
+            m = conn.execute("SELECT * FROM matches WHERE id = ?", (context.user_data["result_match_id"],)).fetchone()
         await update.message.reply_text(
-            "❌ صيغة غير صحيحة. مثال: 2-1",
+            f"❌ صيغة غير صحيحة.\n\n"
+            f"الصحيح: `[أهداف {m['team_home']}]-[أهداف {m['team_away']}]`\n"
+            f"مثال: `2-1`",
+            parse_mode="Markdown",
             reply_markup=_CANCEL_TO_MATCHES_KB,
         )
         return ADMIN_RESULT_SCORE
@@ -829,8 +839,17 @@ async def admin_result_red(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     red = update.message.text.strip()
     context.user_data["result_red"] = "" if red == "-" else red
+
+    with db() as conn:
+        m = conn.execute("SELECT * FROM matches WHERE id = ?", (context.user_data["result_match_id"],)).fetchone()
+
     await update.message.reply_text(
-        "⚡ أدخل نتيجة ركلات الترجيح (مثال: 4-3)، أو أرسل `-` إذا لم تصل المباراة لركلات:",
+        f"⚡ *ركلات الترجيح*\n\n"
+        f"🏠 {m['team_home']} (يسار) — ✈️ {m['team_away']} (يمين)\n\n"
+        f"أدخل النتيجة: `[{m['team_home']}]-[{m['team_away']}]`\n"
+        f"مثال: `4-3`\n\n"
+        f"أو أرسل `-` إذا لم تصل المباراة لركلات الترجيح.",
+        parse_mode="Markdown",
         reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_RESULT_PENALTY
