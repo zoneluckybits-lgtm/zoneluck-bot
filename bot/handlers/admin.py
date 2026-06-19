@@ -3,7 +3,8 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
-from utils import get_user_by_telegram_id, get_referral_tree, format_user_name, set_setting, get_setting
+from utils import get_user_by_telegram_id, get_referral_tree, format_user_name, set_setting, get_setting, get_user_lang
+from lang import t
 from sync_matches import fetch_upcoming_matches, sync_matches_to_db, cleanup_past_unresolved_matches
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
@@ -335,9 +336,10 @@ async def admin_approve_deposit(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     try:
+        lang = get_user_lang(d["telegram_id"])
         await context.bot.send_message(
             chat_id=d["telegram_id"],
-            text=f"✅ *تم قبول إيداعك!*\n\nالمبلغ المُضاف: ${amount:.2f}\nشكراً لك!",
+            text=t("notify_deposit_approved", lang, amount=amount),
             parse_mode="Markdown",
         )
     except Exception:
@@ -345,9 +347,10 @@ async def admin_approve_deposit(update: Update, context: ContextTypes.DEFAULT_TY
 
     if referral_reward_given and referrer:
         try:
+            ref_lang = get_user_lang(referrer["telegram_id"])
             await context.bot.send_message(
                 chat_id=referrer["telegram_id"],
-                text="🎉 *مكافأة الإحالة!*\n\nصديقك الذي دعوته أكمل أول إيداع ناجح!\nتم إضافة $0.50 إلى رصيدك. 🎁",
+                text=t("notify_referral_reward", ref_lang),
                 parse_mode="Markdown",
             )
         except Exception:
@@ -383,9 +386,10 @@ async def admin_reject_deposit(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
     try:
+        lang = get_user_lang(user["telegram_id"])
         await context.bot.send_message(
             chat_id=user["telegram_id"],
-            text=f"❌ *تم رفض طلب إيداعك #{deposit_id}*\n\nتواصل مع الدعم إذا كان لديك استفسار.",
+            text=t("notify_deposit_rejected", lang, dep_id=deposit_id),
             parse_mode="Markdown",
         )
     except Exception:
@@ -493,9 +497,10 @@ async def admin_approve_withdrawal(update: Update, context: ContextTypes.DEFAULT
         ),
     )
     try:
+        lang = get_user_lang(w["telegram_id"])
         await context.bot.send_message(
             chat_id=w["telegram_id"],
-            text=f"✅ *تم قبول طلب سحبك!*\n\nالمبلغ: ${w['amount']:.2f}\nسيصلك قريباً. 💸",
+            text=t("notify_withdraw_approved", lang, amount=w["amount"]),
             parse_mode="Markdown",
         )
     except Exception:
@@ -534,9 +539,10 @@ async def admin_reject_withdrawal(update: Update, context: ContextTypes.DEFAULT_
         ),
     )
     try:
+        lang = get_user_lang(w["telegram_id"])
         await context.bot.send_message(
             chat_id=w["telegram_id"],
-            text=f"❌ *تم رفض طلب سحبك #{wd_id}*\n\nتم إعادة المبلغ ${w['amount']:.2f} إلى رصيدك.",
+            text=t("notify_withdraw_rejected", lang, wd_id=wd_id, amount=w["amount"]),
             parse_mode="Markdown",
         )
     except Exception:
@@ -899,12 +905,10 @@ async def admin_result_penalty(update: Update, context: ContextTypes.DEFAULT_TYP
 
     for tg_id, payout, bet_type, prediction in winners:
         try:
+            lang = get_user_lang(tg_id)
             await context.bot.send_message(
                 chat_id=tg_id,
-                text=f"🎉 *مبروك! فزت في رهانك!*\n\n"
-                     f"⚽ نوع الرهان: {bet_type}\n"
-                     f"🎯 توقعك: {prediction}\n"
-                     f"💰 تم إضافة ${payout:.2f} إلى رصيدك!",
+                text=t("notify_bet_won", lang, bet_type=bet_type, prediction=prediction, payout=payout),
                 parse_mode="Markdown",
             )
         except Exception:
@@ -1111,15 +1115,13 @@ async def admin_lottery_third(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
                 results.append((ticket["telegram_id"], prize, tier, ticket_num))
 
-    tier_names = {1: "🥇 الأولى", 2: "🥈 الثانية", 3: "🥉 الثالثة"}
     for tg_id, prize, tier, ticket_num in results:
         try:
+            lang = get_user_lang(tg_id)
+            tier_name = t(f"lottery_tier_{tier}", lang)
             await context.bot.send_message(
                 chat_id=tg_id,
-                text=f"🎉 *مبروك! فزت في اليانصيب!*\n\n"
-                     f"🎟 رقم تذكرتك: `{ticket_num}`\n"
-                     f"🏆 الجائزة {tier_names[tier]}: ${prize:.2f}\n\n"
-                     f"تم إضافة المبلغ إلى رصيدك! 💰",
+                text=t("notify_lottery_won", lang, ticket=ticket_num, tier=tier_name, prize=prize),
                 parse_mode="Markdown",
             )
         except Exception:
