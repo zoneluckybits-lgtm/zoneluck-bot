@@ -758,7 +758,7 @@ async def admin_match_detail(update: Update, context: ContextTypes.DEFAULT_TYPE)
             text += f"⚡ ركلات الترجيح: {m['penalty_score_home']}-{m['penalty_score_away']}\n"
 
     keyboard = []
-    if m["status"] == "upcoming":
+    if m["status"] in ("upcoming", "expired"):
         keyboard.append([
             InlineKeyboardButton("✏️ تعديل المباراة", callback_data=f"admin_edit_match_{match_id}"),
             InlineKeyboardButton("📋 إدخال النتيجة", callback_data=f"admin_enter_result_{match_id}"),
