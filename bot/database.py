@@ -36,6 +36,7 @@ def init_db():
                 balance REAL DEFAULT 0.0,
                 referred_by INTEGER REFERENCES users(id),
                 referral_rewarded INTEGER DEFAULT 0,
+                language TEXT DEFAULT 'ar',
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -116,3 +117,7 @@ def init_db():
             INSERT OR IGNORE INTO settings (key, value) VALUES ('trc20_address', '');
             INSERT OR IGNORE INTO settings (key, value) VALUES ('bep20_address', '');
         """)
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ar'")
+        except Exception:
+            pass
