@@ -26,7 +26,7 @@ from handlers.wallet import (
 from handlers.referral import referral_menu
 from handlers.matches import (
     matches_menu, show_matches, show_bet_types, bet_type_selected,
-    bet_prediction_received, cancel_bet, BET_PREDICTION,
+    bet_prediction_received, cancel_bet, cancel_bet_callback, BET_PREDICTION,
 )
 from handlers.lottery import lottery_menu, lottery_buy, lottery_confirm
 from handlers.admin import (
@@ -125,10 +125,19 @@ def main():
     bet_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(bet_type_selected, pattern="^bettype_")],
         states={
-            BET_PREDICTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, bet_prediction_received)],
+            BET_PREDICTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, bet_prediction_received),
+                CallbackQueryHandler(cancel_bet_callback, pattern="^cancel_bet$"),
+            ],
         },
-        fallbacks=[CommandHandler("cancel", cancel_bet)],
+        fallbacks=[
+            CommandHandler("cancel", cancel_bet),
+            CallbackQueryHandler(cancel_bet_callback, pattern="^cancel_bet$"),
+        ],
+        per_chat=True,
+        per_user=True,
         per_message=False,
+        allow_reentry=True,
     )
 
     _cancel_matches = CallbackQueryHandler(admin_cancel_to_matches, pattern="^admin_cancel_to_matches$")
