@@ -16,7 +16,7 @@ from telegram.ext import (
 )
 
 from database import init_db
-from handlers.common import start, menu_callback, my_stats
+from handlers.common import start, menu_callback, my_stats, change_language, set_language
 from handlers.wallet import (
     wallet_menu, deposit_start, deposit_network_selected,
     deposit_hash_received, withdraw_start, withdraw_address_received,
@@ -242,6 +242,8 @@ def main():
 
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^main_menu$"))
     app.add_handler(CallbackQueryHandler(my_stats, pattern="^my_stats$"))
+    app.add_handler(CallbackQueryHandler(change_language, pattern="^change_language$"))
+    app.add_handler(CallbackQueryHandler(set_language, pattern="^set_lang_(ar|en)$"))
     app.add_handler(CallbackQueryHandler(wallet_menu, pattern="^wallet$"))
     app.add_handler(CallbackQueryHandler(matches_menu, pattern="^matches_menu$"))
     app.add_handler(CallbackQueryHandler(show_matches, pattern="^matches_(today|week|all)$"))
