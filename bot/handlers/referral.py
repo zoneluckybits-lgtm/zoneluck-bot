@@ -1,13 +1,15 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import db
-from utils import get_user_by_telegram_id, get_referral_tree, format_user_name
+from utils import get_user_by_telegram_id, get_referral_tree, format_user_name, get_user_lang
+from lang import t
 
 
 async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     bot_info = await context.bot.get_me()
@@ -27,25 +29,23 @@ async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     referrer, downline = get_referral_tree(db_user["id"])
 
-    text = f"👥 *نظام الإحالة*\n\n"
-    text += f"🔗 رابط الإحالة الخاص بك:\n`{referral_link}`\n\n"
-    text += f"👤 عدد المدعوين: {referral_count}\n"
-    text += f"✅ مكافآت مكتسبة: {rewarded_count} × $0.50 = ${rewarded_count * 0.5:.2f}\n\n"
+    text = t("referral_title", lang, link=referral_link, count=referral_count,
+             rewarded=rewarded_count, earned=rewarded_count * 0.5)
 
     if referrer:
-        text += f"👆 دعاك: {format_user_name(dict(referrer))}\n\n"
+        text += t("referral_invited_by", lang, name=format_user_name(dict(referrer)))
 
     if downline:
-        text += "👇 *المدعوون منك:*\n"
+        text += t("referral_downline", lang)
         for u in downline[:10]:
             text += f"  • {format_user_name(dict(u))}\n"
         if len(downline) > 10:
-            text += f"  ... و{len(downline) - 10} آخرين\n"
+            text += t("referral_more", lang, count=len(downline) - 10)
 
     await query.edit_message_text(
         text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")]]
         ),
     )
