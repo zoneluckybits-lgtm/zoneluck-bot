@@ -2,7 +2,8 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import db
-from utils import register_user, get_user_by_telegram_id, format_user_name
+from utils import register_user, get_user_by_telegram_id, format_user_name, get_user_lang, set_user_lang
+from lang import t
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
@@ -24,31 +25,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     register_user(user.id, user.username, user.full_name, referred_by)
 
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
     await update.message.reply_text(
-        f"🎯 *مرحباً بك في Zone Luck!*\n\n"
-        f"👤 اسمك: {format_user_name(dict(db_user))}\n"
-        f"💰 رصيدك: ${db_user['balance']:.2f}\n\n"
-        f"اختر من القائمة أدناه:",
+        t("welcome", lang, name=format_user_name(dict(db_user)), balance=db_user["balance"]),
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(user.id),
+        reply_markup=main_menu_keyboard(user.id, lang),
     )
 
 
-def main_menu_keyboard(telegram_id):
+def main_menu_keyboard(telegram_id, lang="ar"):
     buttons = [
         [
-            InlineKeyboardButton("💰 محفظتي", callback_data="wallet"),
-            InlineKeyboardButton("⚽ الرهانات", callback_data="matches_menu"),
+            InlineKeyboardButton(t("btn_wallet", lang), callback_data="wallet"),
+            InlineKeyboardButton(t("btn_matches", lang), callback_data="matches_menu"),
         ],
         [
-            InlineKeyboardButton("🎟 اليانصيب", callback_data="lottery_menu"),
-            InlineKeyboardButton("👥 الإحالة", callback_data="referral"),
+            InlineKeyboardButton(t("btn_lottery", lang), callback_data="lottery_menu"),
+            InlineKeyboardButton(t("btn_referral", lang), callback_data="referral"),
         ],
-        [InlineKeyboardButton("📊 رصيدي وسجلاتي", callback_data="my_stats")],
+        [InlineKeyboardButton(t("btn_stats", lang), callback_data="my_stats")],
+        [InlineKeyboardButton(t("btn_language", lang), callback_data="change_language")],
     ]
     if telegram_id == ADMIN_ID:
-        buttons.append([InlineKeyboardButton("🔧 لوحة الأدمن", callback_data="admin_panel")])
+        buttons.append([InlineKeyboardButton(t("btn_admin", lang), callback_data="admin_panel")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -56,13 +56,50 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
 
     await query.edit_message_text(
-        f"🎯 *القائمة الرئيسية*\n\n"
-        f"💰 رصيدك: ${db_user['balance']:.2f}",
+        t("main_menu_title", lang, balance=db_user["balance"]),
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(user.id),
+        reply_markup=main_menu_keyboard(user.id, lang),
+    )
+
+
+async def change_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🇸🇦 العربية", callback_data="set_lang_ar"),
+            InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en"),
+        ]
+    ])
+    await query.edit_message_text(
+        "🌐 اختر لغتك:\n\nChoose your language:",
+        reply_markup=keyboard,
+    )
+
+
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+
+    lang = "ar" if query.data == "set_lang_ar" else "en"
+    set_user_lang(user.id, lang)
+
+    db_user = get_user_by_telegram_id(user.id)
+    await query.edit_message_text(
+        t("language_set", lang),
+        parse_mode="Markdown",
+    )
+    await context.bot.send_message(
+        chat_id=user.id,
+        text=t("welcome", lang, name=format_user_name(dict(db_user)), balance=db_user["balance"]),
+        parse_mode="Markdown",
+        reply_markup=main_menu_keyboard(user.id, lang),
     )
 
 
@@ -70,13 +107,14 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    lang = get_user_lang(user.id)
 
     with db() as conn:
         db_user = conn.execute(
             "SELECT * FROM users WHERE telegram_id = ?", (user.id,)
         ).fetchone()
         if not db_user:
-            await query.edit_message_text("❌ لم يتم العثور على حسابك.")
+            await query.edit_message_text(t("user_not_found", lang))
             return
 
         bets = conn.execute(
@@ -96,26 +134,26 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (db_user["id"],),
         ).fetchone()
 
-    text = f"📊 *إحصائياتك*\n\n"
-    text += f"💰 الرصيد: ${db_user['balance']:.2f}\n"
-    text += f"🎟 تذاكر اليانصيب: {tickets['cnt']}\n\n"
+    text = t("stats_title", lang)
+    text += t("stats_balance", lang, balance=db_user["balance"])
+    text += t("stats_tickets", lang, count=tickets["cnt"])
 
     if bets:
-        text += "⚽ *آخر الرهانات:*\n"
+        text += t("stats_bets", lang)
         for b in bets:
             status_emoji = {"pending": "⏳", "won": "✅", "lost": "❌"}.get(b["status"], "❓")
             text += f"  {status_emoji} {b['bet_type']} - {b['prediction']} (${b['entry_fee']})\n"
         text += "\n"
 
     if deposits:
-        text += "📥 *آخر الإيداعات:*\n"
+        text += t("stats_deposits", lang)
         for d in deposits:
             status_emoji = {"pending": "⏳", "approved": "✅", "rejected": "❌"}.get(d["status"], "❓")
             text += f"  {status_emoji} ${d['amount']} - {d['network']}\n"
         text += "\n"
 
     if withdrawals:
-        text += "📤 *آخر السحوبات:*\n"
+        text += t("stats_withdrawals", lang)
         for w in withdrawals:
             status_emoji = {"pending": "⏳", "approved": "✅", "rejected": "❌"}.get(w["status"], "❓")
             text += f"  {status_emoji} ${w['amount']}\n"
@@ -124,6 +162,6 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]]
+            [[InlineKeyboardButton(t("btn_back", lang), callback_data="main_menu")]]
         ),
     )
