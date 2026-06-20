@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
@@ -7,6 +9,21 @@ from lang import t
 LOTTERY_CONFIRM = 200
 TICKET_PRICE = 5.0
 PRIZES = {1: 100.0, 2: 200.0, 3: 500.0}
+
+_ET = ZoneInfo("America/Toronto")
+_SA = ZoneInfo("Asia/Riyadh")
+
+
+def next_draw_time():
+    """Returns (next_sunday_et, next_sunday_sa) datetimes."""
+    now_et = datetime.now(_ET)
+    days_ahead = (6 - now_et.weekday()) % 7          # days until Sunday
+    if days_ahead == 0 and now_et.hour >= 21:
+        days_ahead = 7                                 # Sunday already past 9 PM → next week
+    next_et = (now_et + timedelta(days=days_ahead)).replace(
+        hour=21, minute=0, second=0, microsecond=0
+    )
+    return next_et, next_et.astimezone(_SA)
 
 
 async def lottery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -27,7 +44,15 @@ async def lottery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (db_user["id"],),
         ).fetchall()
 
+    next_et, next_sa = next_draw_time()
+    draw_line = (
+        f"📅 *موعد السحب القادم:*\n"
+        f"  🇨🇦 {next_et.strftime('%A %d/%m/%Y — %I:%M %p')} بتوقيت كندا (ET)\n"
+        f"  🇸🇦 {next_sa.strftime('%A %d/%m/%Y — %I:%M %p')} بتوقيت السعودية\n\n"
+    )
+
     text = t("lottery_title", lang, balance=db_user["balance"])
+    text += draw_line
 
     if my_tickets:
         text += t("lottery_active_tickets", lang)
