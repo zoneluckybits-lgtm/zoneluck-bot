@@ -51,6 +51,7 @@ async def deposit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=keyboard,
     )
+    return DEPOSIT_NETWORK
 
 
 async def deposit_network_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,20 +144,19 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
         ),
     )
 
+    proof_text = tx_hash if tx_hash else "صورة إثبات"
+    admin_text = (
+        f"📥 طلب إيداع جديد #{deposit_id} {verify_icon}\n\n"
+        f"👤 {user.full_name} (@{user.username or 'no username'})\n"
+        f"🌐 الشبكة: {network}\n"
+        f"🔗 الإثبات: {proof_text}\n"
+        f"💵 المبلغ: ${final_amount:.2f} USDT\n"
+        f"🔍 {verify_status or 'مراجعة يدوية'}"
+    )
     try:
-        proof_text = f"`{tx_hash}`" if tx_hash else "📎 proof image"
-        admin_text = (
-            f"📥 *طلب إيداع جديد #{deposit_id}* {verify_icon}\n\n"
-            f"👤 {user.full_name} (@{user.username or 'no username'})\n"
-            f"🌐 الشبكة: {network}\n"
-            f"🔗 الإثبات: {proof_text}\n"
-            f"💵 المبلغ: ${final_amount:.2f} USDT\n"
-            f"🔍 {verify_status or 'مراجعة يدوية'}"
-        )
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=admin_text,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ قبول", callback_data=f"admin_approve_deposit_{deposit_id}"),
@@ -164,15 +164,11 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
                 ]
             ]),
         )
-        if proof_file_id:
-            await context.bot.send_photo(chat_id=ADMIN_ID, photo=proof_file_id)
-    except Exception as e:
-        # الإشعار فشل — أرسل رسالة بديلة بدون تنسيق
+    except Exception:
+        pass
+    if proof_file_id:
         try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"⚠️ إيداع جديد #{deposit_id} من {user.full_name} — ${final_amount:.2f} USDT\nراجع لوحة الأدمن لقبوله.",
-            )
+            await context.bot.send_photo(chat_id=ADMIN_ID, photo=proof_file_id)
         except Exception:
             pass
 
