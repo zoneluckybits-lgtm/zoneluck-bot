@@ -1,20 +1,34 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from urllib.parse import urlparse
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_POSTGRES = bool(DATABASE_URL)
 
 if USE_POSTGRES:
-    import psycopg2
+    import pg8000.native  # noqa: F401 — ensure installed
+    import pg8000
+
+
+def _parse_db_url(url: str) -> dict:
+    """Parse postgresql:// or postgres:// URL into pg8000.connect() kwargs."""
+    parsed = urlparse(url)
+    return {
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "database": parsed.path.lstrip("/"),
+        "user": parsed.username,
+        "password": parsed.password,
+        "ssl_context": True,
+    }
 
 
 # ──────────────────────────────────────────────
-#  Shared DictRow (works for both backends)
+#  Shared DictRow (supports key and index access)
 # ──────────────────────────────────────────────
 
 class DictRow(dict):
-    """Supports both key and integer-index access, like sqlite3.Row."""
     def __getitem__(self, key):
         if isinstance(key, int):
             return list(self.values())[key]
@@ -22,7 +36,7 @@ class DictRow(dict):
 
 
 # ──────────────────────────────────────────────
-#  PostgreSQL backend
+#  PostgreSQL backend (pg8000)
 # ──────────────────────────────────────────────
 
 class PGCursor:
@@ -30,24 +44,33 @@ class PGCursor:
         self._cur = raw_cur
         self._lastrowid = None
         self._is_insert = False
+        self._rows = None
+        self._description = None
 
     def execute(self, sql, params=None):
         sql_pg = sql.replace("?", "%s")
         self._is_insert = sql_pg.strip().upper().startswith("INSERT")
         if self._is_insert and "RETURNING" not in sql_pg.upper():
             sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING *"
+
         self._cur.execute(sql_pg, params or ())
+        self._description = self._cur.description
+
         if self._is_insert:
-            row = self._cur.fetchone()
-            if row is not None and self._cur.description:
-                cols = [d[0] for d in self._cur.description]
+            self._rows = self._cur.fetchall() or []
+            if self._rows and self._description:
+                cols = [d[0] for d in self._description]
+                row = self._rows[0]
                 self._lastrowid = row[cols.index("id")] if "id" in cols else None
             else:
                 self._lastrowid = None
+        else:
+            self._rows = None
+
         return self
 
     def fetchone(self):
-        if self._is_insert:
+        if self._is_insert or self._rows is not None:
             return None
         row = self._cur.fetchone()
         if row is None:
@@ -56,13 +79,13 @@ class PGCursor:
         return DictRow(zip(cols, row))
 
     def fetchall(self):
-        if self._is_insert:
+        if self._is_insert or self._rows is not None:
             return []
-        rows = self._cur.fetchall()
+        rows = self._cur.fetchall() or []
         if not rows:
             return []
         cols = [d[0] for d in self._cur.description]
-        return [DictRow(zip(cols, row)) for row in rows]
+        return [DictRow(zip(cols, r)) for r in rows]
 
     @property
     def lastrowid(self):
@@ -99,7 +122,6 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "zoneluck.db")
 
 
 class SQLiteCursor:
-    """Wraps sqlite3 cursor so rows are returned as DictRow."""
     def __init__(self, raw_cur):
         self._cur = raw_cur
 
@@ -131,8 +153,7 @@ class SQLiteConnection:
         self._conn = conn
 
     def execute(self, sql, params=None):
-        cur = SQLiteCursor(self._conn.cursor())
-        return cur.execute(sql, params)
+        return SQLiteCursor(self._conn.cursor()).execute(sql, params)
 
     def executescript(self, script):
         self._conn.executescript(script)
@@ -153,7 +174,8 @@ class SQLiteConnection:
 
 def get_connection():
     if USE_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL)
+        kwargs = _parse_db_url(DATABASE_URL)
+        conn = pg8000.connect(**kwargs)
         return PGConnection(conn)
     else:
         conn = sqlite3.connect(DB_PATH)
@@ -176,7 +198,7 @@ def db():
 
 
 # ──────────────────────────────────────────────
-#  init_db — creates all tables on first run
+#  init_db
 # ──────────────────────────────────────────────
 
 def init_db():
@@ -187,90 +209,91 @@ def init_db():
 
 
 def _init_postgres():
+    stmts = [
+        """CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE NOT NULL,
+            username TEXT,
+            full_name TEXT,
+            balance DOUBLE PRECISION DEFAULT 0.0,
+            referred_by INTEGER REFERENCES users(id),
+            referral_rewarded INTEGER DEFAULT 0,
+            language TEXT DEFAULT 'ar',
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS deposits (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            amount DOUBLE PRECISION NOT NULL,
+            network TEXT NOT NULL,
+            tx_hash TEXT,
+            proof_file_id TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS withdrawals (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            amount DOUBLE PRECISION NOT NULL,
+            wallet_address TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS matches (
+            id SERIAL PRIMARY KEY,
+            team_home TEXT NOT NULL,
+            team_away TEXT NOT NULL,
+            match_time TIMESTAMP NOT NULL,
+            status TEXT DEFAULT 'upcoming',
+            result_home INTEGER,
+            result_away INTEGER,
+            yellow_card_players TEXT DEFAULT '',
+            red_card_players TEXT DEFAULT '',
+            penalty_score_home INTEGER,
+            penalty_score_away INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS bets (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            match_id INTEGER NOT NULL REFERENCES matches(id),
+            bet_type TEXT NOT NULL,
+            entry_fee DOUBLE PRECISION NOT NULL,
+            prediction TEXT NOT NULL,
+            payout DOUBLE PRECISION NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            settled_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS lottery_tickets (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            ticket_number TEXT UNIQUE NOT NULL,
+            draw_id INTEGER,
+            prize_tier INTEGER,
+            prize_amount DOUBLE PRECISION DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS lottery_draws (
+            id SERIAL PRIMARY KEY,
+            first_ticket TEXT,
+            second_ticket TEXT,
+            third_ticket TEXT,
+            drawn_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )""",
+        "INSERT INTO settings (key,value) VALUES ('trc20_address','') ON CONFLICT (key) DO NOTHING",
+        "INSERT INTO settings (key,value) VALUES ('bep20_address','') ON CONFLICT (key) DO NOTHING",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'ar'",
+    ]
     with db() as conn:
-        for stmt in [
-            """CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                telegram_id BIGINT UNIQUE NOT NULL,
-                username TEXT,
-                full_name TEXT,
-                balance DOUBLE PRECISION DEFAULT 0.0,
-                referred_by INTEGER REFERENCES users(id),
-                referral_rewarded INTEGER DEFAULT 0,
-                language TEXT DEFAULT 'ar',
-                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS deposits (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                amount DOUBLE PRECISION NOT NULL,
-                network TEXT NOT NULL,
-                tx_hash TEXT,
-                proof_file_id TEXT,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                reviewed_at TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS withdrawals (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                amount DOUBLE PRECISION NOT NULL,
-                wallet_address TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                reviewed_at TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS matches (
-                id SERIAL PRIMARY KEY,
-                team_home TEXT NOT NULL,
-                team_away TEXT NOT NULL,
-                match_time TIMESTAMP NOT NULL,
-                status TEXT DEFAULT 'upcoming',
-                result_home INTEGER,
-                result_away INTEGER,
-                yellow_card_players TEXT DEFAULT '',
-                red_card_players TEXT DEFAULT '',
-                penalty_score_home INTEGER,
-                penalty_score_away INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS bets (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                match_id INTEGER NOT NULL REFERENCES matches(id),
-                bet_type TEXT NOT NULL,
-                entry_fee DOUBLE PRECISION NOT NULL,
-                prediction TEXT NOT NULL,
-                payout DOUBLE PRECISION NOT NULL,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                settled_at TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS lottery_tickets (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                ticket_number TEXT UNIQUE NOT NULL,
-                draw_id INTEGER,
-                prize_tier INTEGER,
-                prize_amount DOUBLE PRECISION DEFAULT 0,
-                status TEXT DEFAULT 'active',
-                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS lottery_draws (
-                id SERIAL PRIMARY KEY,
-                first_ticket TEXT,
-                second_ticket TEXT,
-                third_ticket TEXT,
-                drawn_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )""",
-            "INSERT INTO settings (key,value) VALUES ('trc20_address','') ON CONFLICT (key) DO NOTHING",
-            "INSERT INTO settings (key,value) VALUES ('bep20_address','') ON CONFLICT (key) DO NOTHING",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'ar'",
-        ]:
+        for stmt in stmts:
             conn.execute(stmt)
 
 
