@@ -7,8 +7,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_POSTGRES = bool(DATABASE_URL)
 
 if USE_POSTGRES:
-    import pg8000.native  # noqa: F401 — ensure installed
-    import pg8000
+    import pg8000.dbapi as _pg8000_dbapi
 
 
 def _parse_db_url(url: str) -> dict:
@@ -175,7 +174,7 @@ class SQLiteConnection:
 def get_connection():
     if USE_POSTGRES:
         kwargs = _parse_db_url(DATABASE_URL)
-        conn = pg8000.connect(**kwargs)
+        conn = _pg8000_dbapi.connect(**kwargs)
         return PGConnection(conn)
     else:
         conn = sqlite3.connect(DB_PATH)
