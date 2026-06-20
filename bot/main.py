@@ -31,6 +31,10 @@ from handlers.matches import (
 )
 from handlers.lottery import lottery_menu, lottery_buy, lottery_confirm
 from handlers.wheel import wheel_menu, wheel_spin
+from handlers.support import (
+    support_menu, support_send_start, support_message_received,
+    SUPPORT_MSG,
+)
 from handlers.admin import (
     admin_panel, admin_users, admin_user_detail,
     admin_deposits, admin_deposit_detail,
@@ -290,6 +294,17 @@ def main():
     app.add_handler(CallbackQueryHandler(lottery_confirm, pattern="^lottery_confirm$"))
     app.add_handler(CallbackQueryHandler(wheel_menu, pattern="^wheel_menu$"))
     app.add_handler(CallbackQueryHandler(wheel_spin, pattern="^wheel_spin$"))
+
+    support_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(support_send_start, pattern="^support_send$")],
+        states={
+            SUPPORT_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, support_message_received)],
+        },
+        fallbacks=[CallbackQueryHandler(support_menu, pattern="^support_menu$")],
+        per_chat=True, per_user=True, per_message=False, allow_reentry=True,
+    )
+    app.add_handler(support_conv)
+    app.add_handler(CallbackQueryHandler(support_menu, pattern="^support_menu$"))
 
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(CallbackQueryHandler(admin_users, pattern="^admin_users$"))
