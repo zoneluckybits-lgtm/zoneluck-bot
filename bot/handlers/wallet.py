@@ -255,11 +255,12 @@ async def withdraw_amount_received(update: Update, context: ContextTypes.DEFAULT
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📤 *New Withdrawal #{withdrawal_id}*\n\n"
-                 f"👤 {user.full_name} (@{user.username})\n"
-                 f"💵 ${amount:.2f}\n"
-                 f"📍 `{wallet_address}`",
-            parse_mode="Markdown",
+            text=(
+                f"📤 طلب سحب جديد #{withdrawal_id}\n\n"
+                f"👤 {user.full_name} (@{user.username or 'no username'})\n"
+                f"💵 ${amount:.2f} USDT\n"
+                f"📍 {wallet_address}"
+            ),
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ قبول", callback_data=f"admin_approve_withdrawal_{withdrawal_id}"),
