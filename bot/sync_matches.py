@@ -94,7 +94,7 @@ def sync_matches_to_db(matches: list[dict]) -> tuple[int, int]:
 
 def cleanup_past_unresolved_matches():
     """Mark matches whose time has passed but are still 'upcoming' as 'expired'."""
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.utcnow()
     with db() as conn:
         conn.execute(
             "UPDATE matches SET status='expired' WHERE status='upcoming' AND match_time < ?",
