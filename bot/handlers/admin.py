@@ -72,6 +72,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(f"📥 إيداعات ({pending_deposits})", callback_data="admin_deposits"),
             InlineKeyboardButton(f"📤 سحوبات ({pending_withdrawals})", callback_data="admin_withdrawals"),
         ],
+        [InlineKeyboardButton("💼 التقارير المالية", callback_data="admin_finance")],
         [InlineKeyboardButton("⚽ إدارة المباريات", callback_data="admin_matches")],
         [InlineKeyboardButton("🎟 اليانصيب", callback_data="admin_lottery")],
         [InlineKeyboardButton("⚙️ إعدادات المحافظ", callback_data="admin_wallets")],
@@ -1466,3 +1467,338 @@ async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("❌ تم الإلغاء.")
     return ConversationHandler.END
+
+
+# ─────────────────────────────────────────────────────────────────
+#  التقارير المالية
+# ─────────────────────────────────────────────────────────────────
+
+@admin_only
+async def admin_finance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """لوحة التقارير المالية الرئيسية — صندوق + ملخص."""
+    query = update.callback_query
+    await query.answer()
+
+    with db() as conn:
+        total_dep = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM deposits WHERE status='approved'"
+        ).fetchone()["s"] or 0
+
+        total_wd = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM withdrawals WHERE status='approved'"
+        ).fetchone()["s"] or 0
+
+        total_bets = conn.execute(
+            "SELECT COALESCE(SUM(entry_fee),0) AS s FROM bets"
+        ).fetchone()["s"] or 0
+
+        total_bets_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM bets"
+        ).fetchone()["c"] or 0
+
+        total_won = conn.execute(
+            "SELECT COALESCE(SUM(payout),0) AS s FROM bets WHERE status='won'"
+        ).fetchone()["s"] or 0
+
+        total_won_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM bets WHERE status='won'"
+        ).fetchone()["c"] or 0
+
+        pending_dep = conn.execute(
+            "SELECT COUNT(*) AS c FROM deposits WHERE status='pending'"
+        ).fetchone()["c"] or 0
+
+        pending_wd = conn.execute(
+            "SELECT COUNT(*) AS c FROM withdrawals WHERE status='pending'"
+        ).fetchone()["c"] or 0
+
+    cashbox = float(total_dep) - float(total_wd) - float(total_won)
+
+    text = (
+        "💼 *التقارير المالية*\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🏦 *الصندوق الحالي:* ${cashbox:.2f}\n"
+        f"  _(الإيداعات − السحوبات − أرباح الرهانات)_\n\n"
+        "📊 *الإيداعات:*\n"
+        f"  ✅ مقبول: ${float(total_dep):.2f}\n"
+        f"  ⏳ معلق: {pending_dep} طلب\n\n"
+        "📊 *السحوبات:*\n"
+        f"  ✅ مقبول: ${float(total_wd):.2f}\n"
+        f"  ⏳ معلق: {pending_wd} طلب\n\n"
+        "🎯 *الرهانات:*\n"
+        f"  💵 إجمالي المراهن به: ${float(total_bets):.2f} ({total_bets_count} رهان)\n"
+        f"  🏆 إجمالي الأرباح المدفوعة: ${float(total_won):.2f} ({total_won_count} فائز)\n"
+        f"  📈 صافي الرهانات: ${float(total_bets) - float(total_won):.2f}"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📥 سجل الإيداعات", callback_data="admin_fin_dep_log"),
+            InlineKeyboardButton("📤 سجل السحوبات", callback_data="admin_fin_wd_log"),
+        ],
+        [
+            InlineKeyboardButton("🎯 سجل الرهانات", callback_data="admin_fin_bets_log"),
+            InlineKeyboardButton("🏆 الرهانات الفائزة", callback_data="admin_fin_won_log"),
+        ],
+        [InlineKeyboardButton("🔙 رجوع للوحة التحكم", callback_data="admin_panel")],
+    ])
+
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+@admin_only
+async def admin_fin_dep_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """سجل الإيداعات التفصيلي."""
+    query = update.callback_query
+    await query.answer()
+
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT d.id, d.amount, d.network, d.status, d.created_at, d.reviewed_at,
+                      u.full_name, u.username
+               FROM deposits d
+               JOIN users u ON d.user_id = u.id
+               ORDER BY d.created_at DESC LIMIT 30"""
+        ).fetchall()
+
+        total_approved = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM deposits WHERE status='approved'"
+        ).fetchone()["s"] or 0
+
+        total_rejected = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM deposits WHERE status='rejected'"
+        ).fetchone()["s"] or 0
+
+        pending_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM deposits WHERE status='pending'"
+        ).fetchone()["c"] or 0
+
+    status_icon = {"approved": "✅", "pending": "⏳", "rejected": "❌"}
+    lines = []
+    for r in rows:
+        created = _fmt_time(r["created_at"]) if r["created_at"] else "—"
+        reviewed = _fmt_time(r["reviewed_at"]) if r["reviewed_at"] else "—"
+        icon = status_icon.get(r["status"], "❓")
+        name = r["username"] and f"@{r['username']}" or r["full_name"] or "—"
+        lines.append(
+            f"{icon} #{r['id']} | {name} | ${r['amount']:.2f} {r['network']}\n"
+            f"   📅 تقديم: {created} | قرار: {reviewed}"
+        )
+
+    text = (
+        "📥 *سجل الإيداعات (آخر 30)*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"✅ إجمالي المقبول: ${float(total_approved):.2f}\n"
+        f"❌ إجمالي المرفوض: ${float(total_rejected):.2f}\n"
+        f"⏳ معلق: {pending_count} طلب\n\n"
+    )
+    if lines:
+        text += "\n".join(lines)
+    else:
+        text += "_لا توجد إيداعات بعد._"
+
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 رجوع للتقارير", callback_data="admin_finance")]]
+        ),
+    )
+
+
+@admin_only
+async def admin_fin_wd_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """سجل السحوبات التفصيلي."""
+    query = update.callback_query
+    await query.answer()
+
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT w.id, w.amount, w.wallet_address, w.status, w.created_at, w.reviewed_at,
+                      u.full_name, u.username
+               FROM withdrawals w
+               JOIN users u ON w.user_id = u.id
+               ORDER BY w.created_at DESC LIMIT 30"""
+        ).fetchall()
+
+        total_approved = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM withdrawals WHERE status='approved'"
+        ).fetchone()["s"] or 0
+
+        total_rejected = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM withdrawals WHERE status='rejected'"
+        ).fetchone()["s"] or 0
+
+        pending_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM withdrawals WHERE status='pending'"
+        ).fetchone()["c"] or 0
+
+    status_icon = {"approved": "✅", "pending": "⏳", "rejected": "❌"}
+    lines = []
+    for r in rows:
+        created = _fmt_time(r["created_at"]) if r["created_at"] else "—"
+        reviewed = _fmt_time(r["reviewed_at"]) if r["reviewed_at"] else "—"
+        icon = status_icon.get(r["status"], "❓")
+        name = r["username"] and f"@{r['username']}" or r["full_name"] or "—"
+        addr = str(r["wallet_address"])[:12] + "…" if r["wallet_address"] else "—"
+        lines.append(
+            f"{icon} #{r['id']} | {name} | ${r['amount']:.2f}\n"
+            f"   📍 {addr} | 📅 تقديم: {created} | قرار: {reviewed}"
+        )
+
+    text = (
+        "📤 *سجل السحوبات (آخر 30)*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"✅ إجمالي المقبول: ${float(total_approved):.2f}\n"
+        f"❌ إجمالي المرفوض: ${float(total_rejected):.2f}\n"
+        f"⏳ معلق: {pending_count} طلب\n\n"
+    )
+    if lines:
+        text += "\n".join(lines)
+    else:
+        text += "_لا توجد سحوبات بعد._"
+
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 رجوع للتقارير", callback_data="admin_finance")]]
+        ),
+    )
+
+
+@admin_only
+async def admin_fin_bets_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """سجل الرهانات — المبالغ المراهن بها."""
+    query = update.callback_query
+    await query.answer()
+
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT b.id, b.bet_type, b.entry_fee, b.prediction, b.status, b.created_at,
+                      u.full_name, u.username,
+                      m.team_home, m.team_away
+               FROM bets b
+               JOIN users u ON b.user_id = u.id
+               JOIN matches m ON b.match_id = m.id
+               ORDER BY b.created_at DESC LIMIT 30"""
+        ).fetchall()
+
+        total_fees = conn.execute(
+            "SELECT COALESCE(SUM(entry_fee),0) AS s FROM bets"
+        ).fetchone()["s"] or 0
+
+        by_type = conn.execute(
+            "SELECT bet_type, COUNT(*) AS c, COALESCE(SUM(entry_fee),0) AS s FROM bets GROUP BY bet_type"
+        ).fetchall()
+
+    bet_type_ar = {
+        "correct_score": "⚽ نتيجة",
+        "yellow_card": "🟡 صفراء",
+        "red_card": "🔴 حمراء",
+        "penalty_score": "⚡ ترجيح",
+    }
+    status_icon = {"pending": "⏳", "won": "🏆", "lost": "❌"}
+
+    summary = "\n".join(
+        f"  {bet_type_ar.get(r['bet_type'], r['bet_type'])}: {r['c']} رهان — ${float(r['s']):.2f}"
+        for r in by_type
+    )
+
+    lines = []
+    for r in rows:
+        icon = status_icon.get(r["status"], "❓")
+        name = r["username"] and f"@{r['username']}" or r["full_name"] or "—"
+        created = _fmt_time(r["created_at"]) if r["created_at"] else "—"
+        lines.append(
+            f"{icon} #{r['id']} {name} | {r['team_home']} vs {r['team_away']}\n"
+            f"   {bet_type_ar.get(r['bet_type'], r['bet_type'])} | ${r['entry_fee']:.2f} | {created}"
+        )
+
+    text = (
+        "🎯 *سجل الرهانات (آخر 30)*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"💵 إجمالي المراهن به: ${float(total_fees):.2f}\n\n"
+        f"*حسب النوع:*\n{summary or '_لا رهانات_'}\n\n"
+    )
+    if lines:
+        text += "\n".join(lines)
+    else:
+        text += "_لا توجد رهانات بعد._"
+
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 رجوع للتقارير", callback_data="admin_finance")]]
+        ),
+    )
+
+
+@admin_only
+async def admin_fin_won_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """سجل الرهانات الفائزة."""
+    query = update.callback_query
+    await query.answer()
+
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT b.id, b.bet_type, b.entry_fee, b.payout, b.prediction, b.settled_at,
+                      u.full_name, u.username,
+                      m.team_home, m.team_away
+               FROM bets b
+               JOIN users u ON b.user_id = u.id
+               JOIN matches m ON b.match_id = m.id
+               WHERE b.status = 'won'
+               ORDER BY b.settled_at DESC LIMIT 30"""
+        ).fetchall()
+
+        total_payout = conn.execute(
+            "SELECT COALESCE(SUM(payout),0) AS s FROM bets WHERE status='won'"
+        ).fetchone()["s"] or 0
+
+        total_fees_won = conn.execute(
+            "SELECT COALESCE(SUM(entry_fee),0) AS s FROM bets WHERE status='won'"
+        ).fetchone()["s"] or 0
+
+        won_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM bets WHERE status='won'"
+        ).fetchone()["c"] or 0
+
+    bet_type_ar = {
+        "correct_score": "⚽ نتيجة",
+        "yellow_card": "🟡 صفراء",
+        "red_card": "🔴 حمراء",
+        "penalty_score": "⚡ ترجيح",
+    }
+
+    lines = []
+    for r in rows:
+        name = r["username"] and f"@{r['username']}" or r["full_name"] or "—"
+        settled = _fmt_time(r["settled_at"]) if r["settled_at"] else "—"
+        lines.append(
+            f"🏆 #{r['id']} {name} | {r['team_home']} vs {r['team_away']}\n"
+            f"   {bet_type_ar.get(r['bet_type'], r['bet_type'])} | دفع: ${r['entry_fee']:.2f} → ربح: ${r['payout']:.2f} | {settled}"
+        )
+
+    net_loss = float(total_fees_won) - float(total_payout)
+    text = (
+        "🏆 *الرهانات الفائزة (آخر 30)*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🔢 العدد الإجمالي: {won_count} رهان فائز\n"
+        f"💵 رسوم الدخول المحصلة: ${float(total_fees_won):.2f}\n"
+        f"💸 إجمالي الأرباح المدفوعة: ${float(total_payout):.2f}\n"
+        f"📈 صافي الكسب من هذه الرهانات: ${net_loss:.2f}\n\n"
+    )
+    if lines:
+        text += "\n".join(lines)
+    else:
+        text += "_لا توجد رهانات فائزة بعد._"
+
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 رجوع للتقارير", callback_data="admin_finance")]]
+        ),
+    )
