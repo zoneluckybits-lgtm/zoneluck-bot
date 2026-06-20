@@ -667,6 +667,7 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ إضافة مباراة يدوياً", callback_data="admin_add_match")],
         [InlineKeyboardButton("🔄 استيراد تلقائي من كأس العالم", callback_data="admin_sync_matches")],
+        [InlineKeyboardButton("🔍 فحص قاعدة البيانات", callback_data="admin_debug_matches")],
     ]
 
     if upcoming:
@@ -699,6 +700,42 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"القادمة: {len(upcoming)} | المنتهية: {len(finished)}",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def admin_debug_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    from datetime import datetime as dt
+    now_utc = dt.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    with db() as conn:
+        all_matches = conn.execute(
+            "SELECT id, team_home, team_away, match_time, status FROM matches ORDER BY match_time DESC LIMIT 10"
+        ).fetchall()
+        today_matches = conn.execute(
+            "SELECT id, team_home, team_away, match_time FROM matches WHERE DATE(match_time) = CURRENT_DATE AND status='upcoming'"
+        ).fetchall()
+        server_date = conn.execute("SELECT CURRENT_DATE::text, NOW()::text").fetchone()
+
+    lines = [f"🕐 *وقت السيرفر الآن:*\n`{now_utc}`\n"]
+    if server_date:
+        lines.append(f"📅 PostgreSQL CURRENT\\_DATE: `{list(server_date.values())[0]}`")
+        lines.append(f"🕑 PostgreSQL NOW: `{str(list(server_date.values())[1])[:19]}`\n")
+
+    lines.append(f"✅ *مباريات اليوم (DATE=CURRENT\\_DATE):* {len(today_matches)}")
+    for m in today_matches:
+        lines.append(f"  • {m['team_home']} vs {m['team_away']} | `{str(m['match_time'])[:16]}`")
+
+    lines.append(f"\n📋 *آخر 10 مباريات في DB:*")
+    for m in all_matches:
+        lines.append(f"  [{m['status']}] {m['team_home']} vs {m['team_away']} | `{str(m['match_time'])[:16]}`")
+
+    await query.edit_message_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 رجوع للمباريات", callback_data="admin_matches")]
+        ]),
     )
 
 
