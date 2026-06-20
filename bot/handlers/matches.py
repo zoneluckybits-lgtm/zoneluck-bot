@@ -35,15 +35,17 @@ def _fmt_time(val):
 
 
 def get_matches_by_category(category):
-    now = datetime.now(timezone.utc)
-    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
-    week_end = now + timedelta(days=7)
+    # naive datetime لتطابق تخزين PostgreSQL بدون timezone
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end   = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    week_end    = now + timedelta(days=7)
 
     with db() as conn:
         if category == "today":
             return conn.execute(
                 "SELECT * FROM matches WHERE match_time >= ? AND match_time <= ? AND status = 'upcoming' ORDER BY match_time",
-                (now, today_end),
+                (today_start, today_end),
             ).fetchall()
         elif category == "week":
             return conn.execute(
