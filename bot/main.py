@@ -16,6 +16,8 @@ from telegram.ext import (
 )
 
 from database import init_db
+
+ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 from handlers.common import start, menu_callback, my_stats, change_language, set_language
 from handlers.wallet import (
     wallet_menu, deposit_start, deposit_network_selected,
