@@ -52,7 +52,7 @@ from handlers.admin import (
     admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
     admin_delete_match, admin_confirm_delete_match,
     admin_finance, admin_fin_dep_log, admin_fin_wd_log, admin_fin_bets_log, admin_fin_won_log,
-    admin_fix_dup_bets,
+    admin_fix_dup_bets, auto_lottery_draw,
     ADMIN_SET_TRC20, ADMIN_SET_BEP20,
     ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME,
     ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY,
@@ -99,7 +99,25 @@ def main():
     init_db()
     logger.info("Database initialized.")
 
-    app = Application.builder().token(token).build()
+    async def post_init(application) -> None:
+        from apscheduler.triggers.cron import CronTrigger
+        from zoneinfo import ZoneInfo
+        application.job_queue.run_custom(
+            auto_lottery_draw,
+            job_kwargs=dict(
+                trigger=CronTrigger(
+                    day_of_week="sun",
+                    hour=21,
+                    minute=0,
+                    second=0,
+                    timezone=ZoneInfo("America/Toronto"),
+                )
+            ),
+            name="weekly_lottery",
+        )
+        logger.info("Weekly lottery draw scheduled: every Sunday 9 PM ET")
+
+    app = Application.builder().token(token).post_init(post_init).build()
 
     deposit_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(deposit_start, pattern="^deposit_start$")],
