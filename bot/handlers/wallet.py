@@ -8,7 +8,7 @@ from lang import t
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
-DEPOSIT_NETWORK, DEPOSIT_HASH = range(2)
+DEPOSIT_NETWORK, DEPOSIT_HASH, DEPOSIT_AMOUNT_INPUT = range(3)
 WITHDRAW_ADDRESS, WITHDRAW_AMOUNT = range(10, 12)
 
 
@@ -82,9 +82,9 @@ async def deposit_network_selected(update: Update, context: ContextTypes.DEFAULT
 
 
 async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """الخطوة 1: استقبال رقم العملية أو الإثبات، ثم سؤال المستخدم عن المبلغ."""
     user = update.effective_user
     lang = get_user_lang(user.id)
-    db_user = get_user_by_telegram_id(user.id)
     network = context.user_data.get("deposit_network", "TRC-20")
 
     tx_hash = None
@@ -100,10 +100,13 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(t("deposit_invalid_hash", lang))
         return DEPOSIT_HASH
 
-    verified_amount = 0.0
-    verify_status = ""
-    verify_icon = ""
+    # حفظ الإثبات مؤقتاً
+    context.user_data["deposit_tx_hash"] = tx_hash
+    context.user_data["deposit_proof_file_id"] = proof_file_id
 
+    # التحقق التلقائي لو في TX hash
+    verified_amount = 0.0
+    verify_hint = ""
     if tx_hash:
         checking_msg = await update.message.reply_text(t("deposit_verifying", lang))
         result = await verify_tx(network, tx_hash)
@@ -111,23 +114,42 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
             await checking_msg.delete()
         except Exception:
             pass
-
         if result["ok"]:
             verified_amount = result["amount"]
-            confirmed = result.get("confirmed", False)
-            if confirmed:
-                verify_status = f"✅ ${verified_amount:.2f} USDT"
-                verify_icon = "✅"
-            else:
-                verify_status = f"⏳ ${verified_amount:.2f} USDT"
-                verify_icon = "⏳"
-        else:
-            verify_status = f"⚠️ {result['error']}"
-            verify_icon = "⚠️"
-            await update.message.reply_text(f"⚠️ {result['error']}")
+            verify_hint = f" (تم الكشف تلقائياً: ${verified_amount:.2f})"
+        context.user_data["deposit_verified_amount"] = verified_amount
 
-    user_amount = context.user_data.get("deposit_amount", 0)
-    final_amount = verified_amount if verified_amount > 0 else user_amount
+    await update.message.reply_text(
+        f"💵 كم المبلغ الذي أرسلته بالدولار (USDT)؟{verify_hint}\n\nأدخل الرقم فقط، مثال: 10",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("❌ إلغاء", callback_data="main_menu")]]
+        ),
+    )
+    return DEPOSIT_AMOUNT_INPUT
+
+
+async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """الخطوة 2: استقبال المبلغ، حفظ الطلب وإشعار الأدمن."""
+    user = update.effective_user
+    lang = get_user_lang(user.id)
+    db_user = get_user_by_telegram_id(user.id)
+    network = context.user_data.get("deposit_network", "TRC-20")
+    tx_hash = context.user_data.get("deposit_tx_hash")
+    proof_file_id = context.user_data.get("deposit_proof_file_id")
+    verified_amount = context.user_data.get("deposit_verified_amount", 0.0)
+
+    try:
+        user_amount = float(update.message.text.strip().replace(",", "."))
+        if user_amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ أدخل رقماً صحيحاً أكبر من صفر، مثال: 10")
+        return DEPOSIT_AMOUNT_INPUT
+
+    # استخدم المبلغ المتحقق لو أكبر من المُدخل، وإلا استخدم ما أدخله المستخدم
+    final_amount = max(verified_amount, user_amount)
+    verify_icon = "✅" if verified_amount > 0 else "👤"
+    verify_status = f"تحقق تلقائي: ${verified_amount:.2f}" if verified_amount > 0 else f"أدخله المستخدم: ${user_amount:.2f}"
 
     with db() as conn:
         cursor = conn.execute(
@@ -151,7 +173,7 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
         f"🌐 الشبكة: {network}\n"
         f"🔗 الإثبات: {proof_text}\n"
         f"💵 المبلغ: ${final_amount:.2f} USDT\n"
-        f"🔍 {verify_status or 'مراجعة يدوية'}"
+        f"🔍 {verify_status}"
     )
     try:
         await context.bot.send_message(
