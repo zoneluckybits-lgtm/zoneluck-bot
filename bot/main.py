@@ -30,6 +30,7 @@ from handlers.matches import (
     bet_prediction_received, cancel_bet, cancel_bet_callback, BET_PREDICTION,
 )
 from handlers.lottery import lottery_menu, lottery_buy, lottery_confirm
+from handlers.wheel import wheel_menu, wheel_spin
 from handlers.admin import (
     admin_panel, admin_users, admin_user_detail,
     admin_deposits, admin_deposit_detail,
@@ -269,6 +270,8 @@ def main():
     app.add_handler(CallbackQueryHandler(lottery_menu, pattern="^lottery_menu$"))
     app.add_handler(CallbackQueryHandler(lottery_buy, pattern="^lottery_buy$"))
     app.add_handler(CallbackQueryHandler(lottery_confirm, pattern="^lottery_confirm$"))
+    app.add_handler(CallbackQueryHandler(wheel_menu, pattern="^wheel_menu$"))
+    app.add_handler(CallbackQueryHandler(wheel_spin, pattern="^wheel_spin$"))
 
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(CallbackQueryHandler(admin_users, pattern="^admin_users$"))
