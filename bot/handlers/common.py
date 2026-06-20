@@ -44,6 +44,7 @@ def main_menu_keyboard(telegram_id, lang="ar"):
             InlineKeyboardButton(t("btn_lottery", lang), callback_data="lottery_menu"),
             InlineKeyboardButton(t("btn_referral", lang), callback_data="referral"),
         ],
+        [InlineKeyboardButton("🎡 دولاب الحظ", callback_data="wheel_menu")],
         [InlineKeyboardButton(t("btn_stats", lang), callback_data="my_stats")],
         [InlineKeyboardButton(t("btn_language", lang), callback_data="change_language")],
     ]
