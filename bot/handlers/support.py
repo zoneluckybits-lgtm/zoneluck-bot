@@ -11,7 +11,6 @@ SUPPORT_MSG = 600
 async def support_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    lang = get_user_lang(update.effective_user.id)
 
     text = (
         "📞 *خدمة العملاء — Zone Luck*\n\n"
@@ -50,24 +49,23 @@ async def support_message_received(update: Update, context: ContextTypes.DEFAULT
     name = format_user_name(dict(db_user)) if db_user else user.full_name or str(user.id)
     username = f"@{user.username}" if user.username else f"ID: {user.id}"
 
-    # إرسال للأدمن
+    # إرسال للأدمن — بدون رابط لحساب الزبون
     try:
-        await context.bot.send_message(
+        sent = await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
                 f"📩 *رسالة دعم جديدة*\n\n"
                 f"👤 المستخدم: {name} ({username})\n"
-                f"🆔 Telegram ID: `{user.id}`\n\n"
-                f"💬 *الرسالة:*\n{msg}"
+                f"🆔 ID: `{user.id}`\n\n"
+                f"💬 *الرسالة:*\n{msg}\n\n"
+                f"_↩️ للرد: استخدم زر Reply على هذه الرسالة وسيصل ردك للزبون تلقائياً_"
             ),
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    f"↩️ ردّ على {name}",
-                    url=f"tg://user?id={user.id}"
-                )]
-            ]),
         )
+        # حفظ المراسلة: message_id الأدمن → telegram_id الزبون
+        if "support_map" not in context.bot_data:
+            context.bot_data["support_map"] = {}
+        context.bot_data["support_map"][sent.message_id] = user.id
     except Exception:
         pass
 
@@ -84,8 +82,43 @@ async def support_message_received(update: Update, context: ContextTypes.DEFAULT
     return ConversationHandler.END
 
 
-async def support_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await support_menu.__wrapped__(update, context) if hasattr(support_menu, "__wrapped__") else await support_menu(update, context)
-    return ConversationHandler.END
+async def admin_support_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """الأدمن يضغط Reply على رسالة الدعم → البوت يرسل الرد للزبون بدون كشف هوية الأدمن"""
+    message = update.message
+
+    # تأكد أن المرسل هو الأدمن وأنها رد على رسالة
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not message.reply_to_message:
+        return
+
+    replied_msg_id = message.reply_to_message.message_id
+    support_map = context.bot_data.get("support_map", {})
+    user_id = support_map.get(replied_msg_id)
+
+    if not user_id:
+        return  # ليست رداً على رسالة دعم
+
+    reply_text = message.text.strip() if message.text else None
+    if not reply_text:
+        await message.reply_text("⚠️ يرجى إرسال نص فقط.")
+        return
+
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"📬 *رد من فريق الدعم — Zone Luck:*\n\n"
+                f"{reply_text}\n\n"
+                f"📧 للمزيد: `{SUPPORT_EMAIL}`"
+            ),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")],
+            ]),
+        )
+        await message.reply_text("✅ تم إرسال ردك للزبون بنجاح.")
+        # إزالة المراسلة بعد الرد
+        support_map.pop(replied_msg_id, None)
+    except Exception as e:
+        await message.reply_text(f"❌ فشل الإرسال: {e}")
