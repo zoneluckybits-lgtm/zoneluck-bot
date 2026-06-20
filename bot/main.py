@@ -50,6 +50,7 @@ from handlers.admin import (
     admin_sync_matches,
     admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
     admin_delete_match, admin_confirm_delete_match,
+    admin_finance, admin_fin_dep_log, admin_fin_wd_log, admin_fin_bets_log, admin_fin_won_log,
     ADMIN_SET_TRC20, ADMIN_SET_BEP20,
     ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME,
     ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY,
@@ -286,6 +287,11 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_confirm_delete_match, pattern="^admin_confirm_delete_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_wallets, pattern="^admin_wallets$"))
     app.add_handler(CallbackQueryHandler(admin_lottery, pattern="^admin_lottery$"))
+    app.add_handler(CallbackQueryHandler(admin_finance, pattern="^admin_finance$"))
+    app.add_handler(CallbackQueryHandler(admin_fin_dep_log, pattern="^admin_fin_dep_log$"))
+    app.add_handler(CallbackQueryHandler(admin_fin_wd_log, pattern="^admin_fin_wd_log$"))
+    app.add_handler(CallbackQueryHandler(admin_fin_bets_log, pattern="^admin_fin_bets_log$"))
+    app.add_handler(CallbackQueryHandler(admin_fin_won_log, pattern="^admin_fin_won_log$"))
 
     async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer()
