@@ -58,7 +58,7 @@ from handlers.admin import (
     admin_edit_match_start, admin_edit_match_home, admin_edit_match_away, admin_edit_match_time,
     admin_delete_match, admin_confirm_delete_match,
     admin_finance, admin_fin_dep_log, admin_fin_wd_log, admin_fin_bets_log, admin_fin_won_log,
-    admin_fix_dup_bets, auto_lottery_draw,
+    admin_fix_dup_bets, auto_lottery_draw, admin_debug_matches,
     ADMIN_SET_TRC20, ADMIN_SET_BEP20,
     ADMIN_ADD_MATCH_HOME, ADMIN_ADD_MATCH_AWAY, ADMIN_ADD_MATCH_TIME,
     ADMIN_RESULT_SCORE, ADMIN_RESULT_YELLOW, ADMIN_RESULT_RED, ADMIN_RESULT_PENALTY,
@@ -326,6 +326,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_reject_withdrawal, pattern="^admin_reject_(wd|withdrawal)_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_matches, pattern="^admin_matches$"))
     app.add_handler(CallbackQueryHandler(admin_sync_matches, pattern="^admin_sync_matches$"))
+    app.add_handler(CallbackQueryHandler(admin_debug_matches, pattern="^admin_debug_matches$"))
     app.add_handler(CallbackQueryHandler(admin_match_detail, pattern="^admin_match_detail_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_delete_match, pattern="^admin_delete_match_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_confirm_delete_match, pattern="^admin_confirm_delete_\\d+$"))
