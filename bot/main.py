@@ -21,7 +21,7 @@ from handlers.wallet import (
     wallet_menu, deposit_start, deposit_network_selected,
     deposit_hash_received, withdraw_start, withdraw_address_received,
     withdraw_amount_received, cancel,
-    DEPOSIT_HASH, WITHDRAW_ADDRESS, WITHDRAW_AMOUNT,
+    DEPOSIT_NETWORK, DEPOSIT_HASH, WITHDRAW_ADDRESS, WITHDRAW_AMOUNT,
 )
 from handlers.referral import referral_menu
 from handlers.matches import (
@@ -100,16 +100,19 @@ def main():
     deposit_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(deposit_start, pattern="^deposit_start$")],
         states={
+            DEPOSIT_NETWORK: [
+                CallbackQueryHandler(deposit_network_selected, pattern="^deposit_(trc20|bep20)$"),
+            ],
             DEPOSIT_HASH: [
                 MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, deposit_hash_received),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CallbackQueryHandler(cancel, pattern="^wallet$"),
+        ],
         per_message=False,
-    )
-
-    deposit_network_handler = CallbackQueryHandler(
-        deposit_network_selected, pattern="^deposit_(trc20|bep20)$"
+        allow_reentry=True,
     )
 
     withdraw_conv = ConversationHandler(
@@ -246,8 +249,6 @@ def main():
     app.add_handler(admin_result_conv)
     app.add_handler(admin_lottery_conv)
     app.add_handler(admin_deposit_amount_conv)
-
-    app.add_handler(deposit_network_handler)
 
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^main_menu$"))
     app.add_handler(CallbackQueryHandler(my_stats, pattern="^my_stats$"))
