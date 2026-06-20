@@ -73,6 +73,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(f"📤 سحوبات ({pending_withdrawals})", callback_data="admin_withdrawals"),
         ],
         [InlineKeyboardButton("💼 التقارير المالية", callback_data="admin_finance")],
+        [InlineKeyboardButton("🧹 تنظيف رهانات مكررة", callback_data="admin_fix_dup_bets")],
         [InlineKeyboardButton("⚽ إدارة المباريات", callback_data="admin_matches")],
         [InlineKeyboardButton("🎟 اليانصيب", callback_data="admin_lottery")],
         [InlineKeyboardButton("⚙️ إعدادات المحافظ", callback_data="admin_wallets")],
@@ -1800,5 +1801,66 @@ async def admin_fin_won_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("🔙 رجوع للتقارير", callback_data="admin_finance")]]
+        ),
+    )
+
+
+@admin_only
+async def admin_fix_dup_bets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يكشف الرهانات المكررة (نفس المستخدم + نفس المباراة)، يحذف الأحدث، ويرجع رسومها للمستخدم."""
+    query = update.callback_query
+    await query.answer()
+
+    with db() as conn:
+        dups = conn.execute("""
+            SELECT b.id, b.user_id, b.match_id, b.entry_fee,
+                   u.telegram_id, u.username,
+                   m.team_home, m.team_away
+            FROM bets b
+            JOIN users u ON u.id = b.user_id
+            JOIN matches m ON m.id = b.match_id
+            WHERE b.id NOT IN (
+                SELECT MIN(id) FROM bets
+                GROUP BY user_id, match_id
+            )
+            AND b.status = 'pending'
+            ORDER BY b.user_id, b.match_id
+        """).fetchall()
+
+        if not dups:
+            await query.edit_message_text(
+                "✅ *لا توجد رهانات مكررة*\n\nكل شيء نظيف.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🔙 لوحة الأدمن", callback_data="admin_panel")]]
+                ),
+            )
+            return
+
+        refunded_users = {}
+        for row in dups:
+            conn.execute(
+                "UPDATE users SET balance = balance + ? WHERE id = ?",
+                (row["entry_fee"], row["user_id"]),
+            )
+            conn.execute("DELETE FROM bets WHERE id = ?", (row["id"],))
+
+            key = (row["telegram_id"], row["username"])
+            if key not in refunded_users:
+                refunded_users[key] = {"matches": [], "total": 0.0}
+            refunded_users[key]["matches"].append(f"{row['team_home']} vs {row['team_away']}")
+            refunded_users[key]["total"] += float(row["entry_fee"])
+
+    lines = [f"✅ *تم تنظيف {len(dups)} رهان مكرر وإرجاع رسومه*\n"]
+    for (tg_id, username), info in refunded_users.items():
+        name = f"@{username}" if username else f"ID:{tg_id}"
+        matches_str = "، ".join(set(info["matches"]))
+        lines.append(f"👤 {name} — ردّ ${info['total']:.2f} — [{matches_str}]")
+
+    await query.edit_message_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 لوحة الأدمن", callback_data="admin_panel")]]
         ),
     )
