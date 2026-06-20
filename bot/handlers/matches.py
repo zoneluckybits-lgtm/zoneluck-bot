@@ -274,6 +274,25 @@ async def bet_prediction_received(update: Update, context: ContextTypes.DEFAULT_
         )
         return ConversationHandler.END
 
+    # تحقق: هل المستخدم راهن على هذه المباراة مسبقاً؟
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM bets WHERE user_id = ? AND match_id = ?",
+            (db_user["id"], match_id),
+        ).fetchone()
+
+    if existing:
+        match_name = context.user_data.get("bet_match_name", "")
+        await update.message.reply_text(
+            f"⚠️ لقد راهنت مسبقاً على مباراة *{match_name}*\n\n"
+            f"مسموح برهان واحد فقط لكل مباراة.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(t("btn_back", lang), callback_data="matches_menu")]]
+            ),
+        )
+        return ConversationHandler.END
+
     with db() as conn:
         conn.execute(
             "UPDATE users SET balance = balance - ? WHERE telegram_id = ?",
