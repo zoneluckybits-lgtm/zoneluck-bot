@@ -33,7 +33,7 @@ from handlers.lottery import lottery_menu, lottery_buy, lottery_confirm
 from handlers.wheel import wheel_menu, wheel_spin
 from handlers.support import (
     support_menu, support_send_start, support_message_received,
-    SUPPORT_MSG,
+    admin_support_reply, SUPPORT_MSG,
 )
 from handlers.admin import (
     admin_panel, admin_users, admin_user_detail,
@@ -305,6 +305,11 @@ def main():
     )
     app.add_handler(support_conv)
     app.add_handler(CallbackQueryHandler(support_menu, pattern="^support_menu$"))
+    # الأدمن يرد على رسائل الدعم عبر Reply — بدون كشف هويته للزبون
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.Chat(ADMIN_ID) & filters.REPLY,
+        admin_support_reply,
+    ))
 
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(CallbackQueryHandler(admin_users, pattern="^admin_users$"))
