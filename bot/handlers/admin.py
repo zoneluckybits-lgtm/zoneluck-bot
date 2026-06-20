@@ -1,11 +1,23 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
 from utils import get_user_by_telegram_id, get_referral_tree, format_user_name, set_setting, get_setting, get_user_lang
 from lang import t
+
+
 from sync_matches import fetch_upcoming_matches, sync_matches_to_db, cleanup_past_unresolved_matches
+
+
+def _fmt_time(val, short=False):
+    """Format a match_time that may be a datetime object (PostgreSQL) or a string (SQLite)."""
+    if isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d") if short else val.strftime("%Y-%m-%d %H:%M")
+    if val:
+        s = str(val)
+        return s[:10] if short else s[:16]
+    return "?"
 
 ADMIN_ID = int(os.environ.get("ADMIN_TELEGRAM_ID", "0"))
 
@@ -659,7 +671,7 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for m in upcoming:
             keyboard.append([
                 InlineKeyboardButton(
-                    f"⏳ {m['team_home']} vs {m['team_away']} | {m['match_time'][:16]}",
+                    f"⏳ {m['team_home']} vs {m['team_away']} | {_fmt_time(m['match_time'])}",
                     callback_data=f"admin_match_detail_{m['id']}",
                 )
             ])
@@ -672,7 +684,7 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_icon = {"finished": "✅", "expired": "⌛", "cancelled": "❌"}.get(m["status"], "❓")
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{status_icon} {m['team_home']} vs {m['team_away']} | {m['match_time'][:10]}",
+                    f"{status_icon} {m['team_home']} vs {m['team_away']} | {_fmt_time(m['match_time'], short=True)}",
                     callback_data=f"admin_match_detail_{m['id']}",
                 )
             ])
@@ -708,7 +720,7 @@ async def admin_cancel_to_matches(update: Update, context: ContextTypes.DEFAULT_
         keyboard.append([InlineKeyboardButton("━━━ القادمة ━━━", callback_data="noop")])
         for m in upcoming:
             keyboard.append([InlineKeyboardButton(
-                f"⏳ {m['team_home']} vs {m['team_away']} | {m['match_time'][:16]}",
+                f"⏳ {m['team_home']} vs {m['team_away']} | {_fmt_time(m['match_time'])}",
                 callback_data=f"admin_match_detail_{m['id']}",
             )])
     if finished:
@@ -716,7 +728,7 @@ async def admin_cancel_to_matches(update: Update, context: ContextTypes.DEFAULT_
         for m in finished:
             icon = {"finished": "✅", "expired": "⌛", "cancelled": "❌"}.get(m["status"], "❓")
             keyboard.append([InlineKeyboardButton(
-                f"{icon} {m['team_home']} vs {m['team_away']} | {m['match_time'][:10]}",
+                f"{icon} {m['team_home']} vs {m['team_away']} | {_fmt_time(m['match_time'], short=True)}",
                 callback_data=f"admin_match_detail_{m['id']}",
             )])
     keyboard.append([InlineKeyboardButton("🔙 رجوع للوحة التحكم", callback_data="admin_panel")])
@@ -829,7 +841,7 @@ async def admin_match_detail(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     text = f"⚽ *{m['team_home']} vs {m['team_away']}*\n"
-    text += f"📅 الموعد: {m['match_time'][:16]}\n"
+    text += f"📅 الموعد: {_fmt_time(m['match_time'])}\n"
     text += f"📊 الحالة: {m['status']}\n"
     text += f"🎯 عدد الرهانات: {bets_count}\n"
 
@@ -1335,7 +1347,7 @@ async def admin_edit_match_away(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data["edit_new_away"] = current["team_away"] if val == "-" else val
 
     await update.message.reply_text(
-        f"موعد المباراة الحالي: *{current['match_time'][:16]}*\n\n"
+        f"موعد المباراة الحالي: *{_fmt_time(current['match_time'])}*\n\n"
         f"أدخل الموعد الجديد بالصيغة: YYYY-MM-DD HH:MM\n"
         f"مثال: 2025-07-15 20:00\n\n"
         f"أو أرسل `-` للإبقاء على الموعد الحالي:",
