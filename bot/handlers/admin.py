@@ -713,14 +713,20 @@ async def admin_debug_matches(update: Update, context: ContextTypes.DEFAULT_TYPE
             "SELECT id, team_home, team_away, match_time, status FROM matches ORDER BY match_time ASC LIMIT 15"
         ).fetchall()
         today_matches = conn.execute(
-            "SELECT id, team_home, team_away, match_time FROM matches WHERE DATE(match_time) = CURRENT_DATE AND status='upcoming'"
+            "SELECT id, team_home, team_away, match_time FROM matches "
+            "WHERE DATE(match_time) = (NOW() AT TIME ZONE 'Asia/Riyadh')::date AND status='upcoming'"
         ).fetchall()
-        server_date = conn.execute("SELECT CURRENT_DATE::text, NOW()::text").fetchone()
+        server_date = conn.execute(
+            "SELECT CURRENT_DATE::text, NOW()::text, "
+            "(NOW() AT TIME ZONE 'Asia/Riyadh')::date::text AS riyadh_date, "
+            "(NOW() AT TIME ZONE 'Asia/Riyadh')::text AS riyadh_now"
+        ).fetchone()
 
     lines = [f"🕐 *وقت السيرفر الآن:*\n`{now_utc}`\n"]
     if server_date:
-        lines.append(f"📅 PostgreSQL CURRENT\\_DATE: `{list(server_date.values())[0]}`")
-        lines.append(f"🕑 PostgreSQL NOW: `{str(list(server_date.values())[1])[:19]}`\n")
+        lines.append(f"📅 UTC CURRENT\\_DATE: `{list(server_date.values())[0]}`")
+        lines.append(f"🕌 السعودية DATE: `{list(server_date.values())[2]}`")
+        lines.append(f"🕑 السعودية NOW: `{str(list(server_date.values())[3])[:19]}`\n")
 
     lines.append(f"✅ *مباريات اليوم (DATE=CURRENT\\_DATE):* {len(today_matches)}")
     for m in today_matches:
