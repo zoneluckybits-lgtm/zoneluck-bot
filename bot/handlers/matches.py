@@ -25,10 +25,19 @@ def get_bet_info(key, lang):
     return names.get(key, (key, ""))
 
 
+def _fmt_time(val):
+    """Return 'YYYY-MM-DD HH:MM' from a datetime object or string."""
+    if isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d %H:%M")
+    if val:
+        return str(val)[:16]
+    return "?"
+
+
 def get_matches_by_category(category):
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    today_end = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59).strftime("%Y-%m-%d %H:%M:%S")
-    week_end = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc)
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    week_end = now + timedelta(days=7)
 
     with db() as conn:
         if category == "today":
@@ -73,7 +82,17 @@ async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(user.id)
     category = query.data.replace("matches_", "")
 
-    matches = get_matches_by_category(category)
+    try:
+        matches = get_matches_by_category(category)
+    except Exception as e:
+        await query.edit_message_text(
+            f"❌ خطأ في تحميل المباريات: {e}",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(t("btn_back_short", lang), callback_data="matches_menu")]]
+            ),
+        )
+        return
+
     category_names = {
         "today": t("category_today", lang),
         "week":  t("category_week", lang),
@@ -91,7 +110,7 @@ async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     buttons = []
     for m in matches:
-        match_time = m["match_time"][:16] if m["match_time"] else "?"
+        match_time = _fmt_time(m["match_time"])
         buttons.append([
             InlineKeyboardButton(
                 f"⚽ {m['team_home']} vs {m['team_away']} | {match_time}",
@@ -114,8 +133,12 @@ async def show_bet_types(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(user.id)
     match_id = int(query.data.split("_")[-1])
 
-    with db() as conn:
-        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    try:
+        with db() as conn:
+            match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    except Exception as e:
+        await query.edit_message_text(f"❌ خطأ: {e}")
+        return
 
     if not match:
         await query.edit_message_text(t("match_not_found", lang))
@@ -136,7 +159,8 @@ async def show_bet_types(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton(t("btn_back_short", lang), callback_data="matches_all")])
 
     await query.edit_message_text(
-        t("choose_bet_type", lang, home=match["team_home"], away=match["team_away"], time=match["match_time"][:16]),
+        t("choose_bet_type", lang, home=match["team_home"], away=match["team_away"],
+          time=_fmt_time(match["match_time"])),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
