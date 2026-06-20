@@ -32,7 +32,7 @@ from handlers.lottery import lottery_menu, lottery_buy, lottery_confirm
 from handlers.admin import (
     admin_panel, admin_users, admin_user_detail,
     admin_deposits, admin_deposit_detail,
-    admin_approve_deposit, admin_reject_deposit,
+    admin_approve_deposit, admin_reject_deposit, admin_deposit_amount_input,
     admin_withdrawals, admin_withdrawal_detail,
     admin_approve_withdrawal, admin_reject_withdrawal,
     admin_matches, admin_add_match_start, admin_add_match_home,
@@ -240,6 +240,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_deposit_amount_input), group=0)
     app.add_handler(deposit_conv)
     app.add_handler(withdraw_conv)
     app.add_handler(bet_conv)
