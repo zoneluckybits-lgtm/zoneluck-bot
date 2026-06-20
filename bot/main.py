@@ -19,9 +19,10 @@ from database import init_db
 from handlers.common import start, menu_callback, my_stats, change_language, set_language
 from handlers.wallet import (
     wallet_menu, deposit_start, deposit_network_selected,
-    deposit_hash_received, withdraw_start, withdraw_address_received,
+    deposit_hash_received, deposit_amount_received,
+    withdraw_start, withdraw_address_received,
     withdraw_amount_received, cancel,
-    DEPOSIT_NETWORK, DEPOSIT_HASH, WITHDRAW_ADDRESS, WITHDRAW_AMOUNT,
+    DEPOSIT_NETWORK, DEPOSIT_HASH, DEPOSIT_AMOUNT_INPUT, WITHDRAW_ADDRESS, WITHDRAW_AMOUNT,
 )
 from handlers.referral import referral_menu
 from handlers.matches import (
@@ -105,6 +106,9 @@ def main():
             ],
             DEPOSIT_HASH: [
                 MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, deposit_hash_received),
+            ],
+            DEPOSIT_AMOUNT_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, deposit_amount_received),
             ],
         },
         fallbacks=[
