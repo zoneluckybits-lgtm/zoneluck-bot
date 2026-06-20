@@ -288,13 +288,13 @@ async def admin_approve_deposit(update: Update, context: ContextTypes.DEFAULT_TY
         amount = d["amount"] if d["amount"] else 0
 
         if amount <= 0:
+            context.user_data["awaiting_deposit_amount_for"] = deposit_id
             await query.edit_message_text(
-                "⚠️ أدخل مبلغ الإيداع أولاً:",
+                f"⚠️ هذا الإيداع لم يُتحقق منه تلقائياً.\n\nأرسل المبلغ بالدولار (مثال: 5.00) للإيداع #{deposit_id}:",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 رجوع", callback_data=f"admin_dep_detail_{deposit_id}")]
                 ]),
             )
-            context.user_data["awaiting_deposit_amount_for"] = deposit_id
             return
 
         conn.execute(
@@ -352,6 +352,91 @@ async def admin_approve_deposit(update: Update, context: ContextTypes.DEFAULT_TY
                 chat_id=referrer["telegram_id"],
                 text=t("notify_referral_reward", ref_lang),
                 parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+
+async def admin_deposit_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """MessageHandler — يستقبل المبلغ الذي يكتبه الأدمن يدوياً لإيداع غير مُتحقق."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    deposit_id = context.user_data.get("awaiting_deposit_amount_for")
+    if not deposit_id:
+        return
+
+    try:
+        amount = float(update.message.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ أدخل رقماً صحيحاً أكبر من صفر (مثال: 5.00)")
+        return
+
+    with db() as conn:
+        d = conn.execute(
+            """SELECT d.*, u.telegram_id, u.referred_by, u.referral_rewarded
+               FROM deposits d JOIN users u ON d.user_id = u.id WHERE d.id = ?""",
+            (deposit_id,),
+        ).fetchone()
+
+        if not d or d["status"] != "pending":
+            await update.message.reply_text("❌ الإيداع غير موجود أو تمت معالجته مسبقاً.")
+            context.user_data.pop("awaiting_deposit_amount_for", None)
+            return
+
+        conn.execute(
+            "UPDATE deposits SET status='approved', amount=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?",
+            (amount, deposit_id),
+        )
+        conn.execute(
+            "UPDATE users SET balance = balance + ? WHERE id=?",
+            (amount, d["user_id"]),
+        )
+
+        referral_reward_given = False
+        referrer = None
+        if d["referred_by"] and not d["referral_rewarded"]:
+            first_approved = conn.execute(
+                "SELECT COUNT(*) as cnt FROM deposits WHERE user_id=? AND status='approved' AND id!=?",
+                (d["user_id"], deposit_id),
+            ).fetchone()["cnt"]
+            if first_approved == 0:
+                conn.execute(
+                    "UPDATE users SET balance = balance + 0.50 WHERE id=?", (d["referred_by"],)
+                )
+                conn.execute(
+                    "UPDATE users SET referral_rewarded=1 WHERE id=?", (d["user_id"],)
+                )
+                referral_reward_given = True
+                referrer = conn.execute(
+                    "SELECT telegram_id FROM users WHERE id=?", (d["referred_by"],)
+                ).fetchone()
+
+    context.user_data.pop("awaiting_deposit_amount_for", None)
+
+    await update.message.reply_text(
+        f"✅ تم قبول الإيداع #{deposit_id} بمبلغ ${amount:.2f}",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 للإيداعات", callback_data="admin_deposits")]]
+        ),
+    )
+
+    try:
+        lang = get_user_lang(d["telegram_id"])
+        await context.bot.send_message(
+            chat_id=d["telegram_id"],
+            text=t("notify_deposit_approved", lang, amount=amount),
+        )
+    except Exception:
+        pass
+
+    if referral_reward_given and referrer:
+        try:
+            ref_lang = get_user_lang(referrer["telegram_id"])
+            await context.bot.send_message(
+                chat_id=referrer["telegram_id"],
+                text=t("notify_referral_reward", ref_lang),
             )
         except Exception:
             pass
