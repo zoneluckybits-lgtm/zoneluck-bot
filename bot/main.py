@@ -240,7 +240,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_deposit_amount_input), group=0)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_deposit_amount_input), group=10)
     app.add_handler(deposit_conv)
     app.add_handler(withdraw_conv)
     app.add_handler(bet_conv)
