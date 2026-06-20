@@ -24,7 +24,9 @@ def get_setting(key):
 def set_setting(key, value):
     with db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value)
+            "INSERT INTO settings (key, value) VALUES (?, ?)"
+            " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            (key, value),
         )
 
 
