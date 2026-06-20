@@ -146,12 +146,12 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         proof_text = f"`{tx_hash}`" if tx_hash else "📎 proof image"
         admin_text = (
-            f"📥 *New Deposit #{deposit_id}* {verify_icon}\n\n"
+            f"📥 *طلب إيداع جديد #{deposit_id}* {verify_icon}\n\n"
             f"👤 {user.full_name} (@{user.username or 'no username'})\n"
-            f"🌐 {network}\n"
-            f"🔗 {proof_text}\n"
-            f"💵 ${final_amount:.2f} USDT\n"
-            f"🔍 {verify_status or 'manual review'}"
+            f"🌐 الشبكة: {network}\n"
+            f"🔗 الإثبات: {proof_text}\n"
+            f"💵 المبلغ: ${final_amount:.2f} USDT\n"
+            f"🔍 {verify_status or 'مراجعة يدوية'}"
         )
         await context.bot.send_message(
             chat_id=ADMIN_ID,
@@ -166,8 +166,15 @@ async def deposit_hash_received(update: Update, context: ContextTypes.DEFAULT_TY
         )
         if proof_file_id:
             await context.bot.send_photo(chat_id=ADMIN_ID, photo=proof_file_id)
-    except Exception:
-        pass
+    except Exception as e:
+        # الإشعار فشل — أرسل رسالة بديلة بدون تنسيق
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⚠️ إيداع جديد #{deposit_id} من {user.full_name} — ${final_amount:.2f} USDT\nراجع لوحة الأدمن لقبوله.",
+            )
+        except Exception:
+            pass
 
     context.user_data.clear()
     return ConversationHandler.END
