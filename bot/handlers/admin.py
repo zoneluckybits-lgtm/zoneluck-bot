@@ -710,7 +710,7 @@ async def admin_debug_matches(update: Update, context: ContextTypes.DEFAULT_TYPE
     now_utc = dt.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     with db() as conn:
         all_matches = conn.execute(
-            "SELECT id, team_home, team_away, match_time, status FROM matches ORDER BY match_time DESC LIMIT 10"
+            "SELECT id, team_home, team_away, match_time, status FROM matches ORDER BY match_time ASC LIMIT 15"
         ).fetchall()
         today_matches = conn.execute(
             "SELECT id, team_home, team_away, match_time FROM matches WHERE DATE(match_time) = CURRENT_DATE AND status='upcoming'"
