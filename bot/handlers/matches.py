@@ -35,22 +35,15 @@ def _fmt_time(val):
 
 
 def get_matches_by_category(category):
-    # naive datetime لتطابق تخزين PostgreSQL بدون timezone
-    now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end   = now.replace(hour=23, minute=59, second=59, microsecond=0)
-    week_end    = now + timedelta(days=7)
-
     with db() as conn:
         if category == "today":
+            # نخلي PostgreSQL يقارن التواريخ مباشرة — بدون بيراميتر Python
             return conn.execute(
-                "SELECT * FROM matches WHERE match_time >= ? AND match_time <= ? AND status = 'upcoming' ORDER BY match_time",
-                (today_start, today_end),
+                "SELECT * FROM matches WHERE DATE(match_time) = CURRENT_DATE AND status = 'upcoming' ORDER BY match_time"
             ).fetchall()
         elif category == "week":
             return conn.execute(
-                "SELECT * FROM matches WHERE match_time >= ? AND match_time <= ? AND status = 'upcoming' ORDER BY match_time",
-                (now, week_end),
+                "SELECT * FROM matches WHERE match_time >= NOW() AND match_time <= NOW() + INTERVAL '7 days' AND status = 'upcoming' ORDER BY match_time"
             ).fetchall()
         else:
             return conn.execute(
