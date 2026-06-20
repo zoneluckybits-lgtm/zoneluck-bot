@@ -46,6 +46,7 @@ def main_menu_keyboard(telegram_id, lang="ar"):
         ],
         [InlineKeyboardButton("🎡 دولاب الحظ", callback_data="wheel_menu")],
         [InlineKeyboardButton(t("btn_stats", lang), callback_data="my_stats")],
+        [InlineKeyboardButton("📞 الدعم والمساعدة", callback_data="support_menu")],
         [InlineKeyboardButton(t("btn_language", lang), callback_data="change_language")],
     ]
     if telegram_id == ADMIN_ID:
