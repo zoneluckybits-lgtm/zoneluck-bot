@@ -285,8 +285,8 @@ async def withdraw_amount_received(update: Update, context: ContextTypes.DEFAULT
             ),
             reply_markup=InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ قبول", callback_data=f"admin_approve_withdrawal_{withdrawal_id}"),
-                    InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_withdrawal_{withdrawal_id}"),
+                    InlineKeyboardButton("✅ قبول", callback_data=f"admin_approve_wd_{withdrawal_id}"),
+                    InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_wd_{withdrawal_id}"),
                 ]
             ]),
         )
