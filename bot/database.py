@@ -35,11 +35,15 @@ class PGCursor:
         sql_pg = sql.replace("?", "%s")
         self._is_insert = sql_pg.strip().upper().startswith("INSERT")
         if self._is_insert and "RETURNING" not in sql_pg.upper():
-            sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING id"
+            sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING *"
         self._cur.execute(sql_pg, params or ())
         if self._is_insert:
             row = self._cur.fetchone()
-            self._lastrowid = row[0] if row else None
+            if row is not None and self._cur.description:
+                cols = [d[0] for d in self._cur.description]
+                self._lastrowid = row[cols.index("id")] if "id" in cols else None
+            else:
+                self._lastrowid = None
         return self
 
     def fetchone(self):
