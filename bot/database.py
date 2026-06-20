@@ -276,6 +276,15 @@ def _init_postgres():
             status TEXT DEFAULT 'active',
             purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
+        """CREATE TABLE IF NOT EXISTS wheel_spins (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            cost DOUBLE PRECISION NOT NULL,
+            prize_emoji TEXT NOT NULL,
+            prize_mult INTEGER NOT NULL,
+            prize_amount DOUBLE PRECISION NOT NULL,
+            spun_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
         """CREATE TABLE IF NOT EXISTS lottery_draws (
             id SERIAL PRIMARY KEY,
             first_ticket TEXT,
@@ -365,6 +374,15 @@ def _init_sqlite():
                 prize_amount REAL DEFAULT 0,
                 status TEXT DEFAULT 'active',
                 purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS wheel_spins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                cost REAL NOT NULL,
+                prize_emoji TEXT NOT NULL,
+                prize_mult INTEGER NOT NULL,
+                prize_amount REAL NOT NULL,
+                spun_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS lottery_draws (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
