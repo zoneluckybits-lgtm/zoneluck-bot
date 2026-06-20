@@ -146,6 +146,8 @@ async def show_bet_types(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["bet_match_id"] = match_id
     context.user_data["bet_match_name"] = f"{match['team_home']} vs {match['team_away']}"
+    context.user_data["bet_team_home"] = match["team_home"]
+    context.user_data["bet_team_away"] = match["team_away"]
 
     buttons = []
     for key, info in BET_TYPES.items():
@@ -178,10 +180,13 @@ async def bet_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     info = BET_TYPES[bet_type]
-    name, prompt = get_bet_info(bet_type, lang)
+    name, _ = get_bet_info(bet_type, lang)
     context.user_data["bet_type"] = bet_type
     context.user_data["bet_fee"] = info["fee"]
     context.user_data["bet_payout"] = info["payout"]
+
+    team_home = context.user_data.get("bet_team_home", "الفريق الأول")
+    team_away = context.user_data.get("bet_team_away", "الفريق الثاني")
 
     db_user = get_user_by_telegram_id(user.id)
 
@@ -194,8 +199,39 @@ async def bet_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
+    # بناء prompt واضح مع أسماء الفرق
+    if bet_type == "correct_score":
+        prompt = (
+            f"🏠 *{team_home}* (الرقم الأول)\n"
+            f"✈️ *{team_away}* (الرقم الثاني)\n\n"
+            f"أدخل توقعك للنتيجة:\n"
+            f"`[أهداف {team_home}]-[أهداف {team_away}]`\n\n"
+            f"مثال: `2-1` يعني {team_home} سجّل 2 و{team_away} سجّل 1"
+        )
+    elif bet_type == "penalty_score":
+        prompt = (
+            f"🏠 *{team_home}* (الرقم الأول)\n"
+            f"✈️ *{team_away}* (الرقم الثاني)\n\n"
+            f"أدخل نتيجة ركلات الترجيح:\n"
+            f"`[{team_home}]-[{team_away}]`\n\n"
+            f"مثال: `4-3` يعني {team_home} سجّل 4 و{team_away} سجّل 3"
+        )
+    elif bet_type == "yellow_card":
+        prompt = f"أدخل اسم اللاعب الذي تتوقع أنه سيأخذ بطاقة صفراء:"
+    else:  # red_card
+        prompt = f"أدخل اسم اللاعب الذي تتوقع أنه سيأخذ بطاقة حمراء:"
+
+    text = (
+        f"⚽ *{team_home} vs {team_away}*\n\n"
+        f"🎯 *{name}*\n"
+        f"💵 رسوم الدخول: ${info['fee']}\n"
+        f"🏆 الجائزة عند الفوز: ${info['payout']}\n\n"
+        f"{prompt}"
+    )
+
     await query.edit_message_text(
-        t("bet_prompt", lang, name=name, fee=info["fee"], payout=info["payout"], prompt=prompt),
+        text,
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton(t("btn_cancel", lang), callback_data="cancel_bet")]]
         ),
