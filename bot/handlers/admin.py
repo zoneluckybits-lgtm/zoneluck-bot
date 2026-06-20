@@ -1,4 +1,5 @@
 import os
+import random
 from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -1245,12 +1246,42 @@ async def admin_lottery_third(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
+    # إشعار الخاسرين وتعليم تذاكرهم بـ lost
+    winning_nums = {first, second, third}
+    with db() as conn:
+        losers = conn.execute(
+            """SELECT lt.ticket_number, u.telegram_id
+               FROM lottery_tickets lt JOIN users u ON lt.user_id = u.id
+               WHERE lt.status = 'active' AND lt.ticket_number NOT IN (?, ?, ?)""",
+            (first, second, third),
+        ).fetchall()
+        conn.execute(
+            "UPDATE lottery_tickets SET status='lost' WHERE status='active' AND ticket_number NOT IN (?, ?, ?)",
+            (first, second, third),
+        )
+
+    for loser in losers:
+        try:
+            await context.bot.send_message(
+                chat_id=loser["telegram_id"],
+                text=(
+                    f"🎟 *نتيجة سحب اليانصيب*\n\n"
+                    f"للأسف بطاقتك `{loser['ticket_number']}` لم تفز هذه المرة 😔\n\n"
+                    f"لا تيأس! اشتري تذاكر جديدة للسحب القادم\n"
+                    f"📅 كل أحد الساعة 9 مساءً بتوقيت كندا 🍀"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
     await update.message.reply_text(
         f"✅ *تم إعلان نتائج اليانصيب!*\n\n"
         f"🥇 الأولى: `{first}`\n"
         f"🥈 الثانية: `{second}`\n"
         f"🥉 الثالثة: `{third}`\n\n"
-        f"الفائزون الذين وجدنا تذاكرهم: {len(results)}",
+        f"🏆 الفائزون: {len(results)}\n"
+        f"😔 الخاسرون (تم إشعارهم): {len(losers)}",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("🔙 لليانصيب", callback_data="admin_lottery")]]
@@ -1885,3 +1916,113 @@ async def admin_fix_dup_bets(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [[InlineKeyboardButton("🔙 لوحة الأدمن", callback_data="admin_panel")]]
         ),
     )
+
+
+async def auto_lottery_draw(context) -> None:
+    """تُشغَّل تلقائياً كل أحد الساعة 9 مساءً بتوقيت تورنتو."""
+    from zoneinfo import ZoneInfo
+    now_label = datetime.now(ZoneInfo("America/Toronto")).strftime("%A %d/%m/%Y %I:%M %p ET")
+
+    with db() as conn:
+        all_tickets = conn.execute(
+            """SELECT lt.id, lt.ticket_number, lt.user_id, u.telegram_id
+               FROM lottery_tickets lt JOIN users u ON lt.user_id = u.id
+               WHERE lt.status = 'active' AND lt.prize_amount = 0"""
+        ).fetchall()
+
+        if not all_tickets:
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"🎟 *السحب الأسبوعي — {now_label}*\n\n⚠️ لا توجد تذاكر نشطة.",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+            return
+
+        num_winners = min(3, len(all_tickets))
+        winners = random.sample(all_tickets, num_winners)
+        winner_ids = {w["id"] for w in winners}
+        prize_map = {0: (1, 100.0), 1: (2, 200.0), 2: (3, 500.0)}
+
+        draw_cursor = conn.execute(
+            "INSERT INTO lottery_draws (first_ticket, second_ticket, third_ticket) VALUES (?, ?, ?)",
+            (
+                winners[0]["ticket_number"] if len(winners) > 0 else None,
+                winners[1]["ticket_number"] if len(winners) > 1 else None,
+                winners[2]["ticket_number"] if len(winners) > 2 else None,
+            ),
+        )
+        draw_id = draw_cursor.lastrowid
+
+        for i, winner in enumerate(winners):
+            tier, prize = prize_map[i]
+            conn.execute(
+                "UPDATE lottery_tickets SET prize_tier=?, prize_amount=?, draw_id=?, status='won' WHERE id=?",
+                (tier, prize, draw_id, winner["id"]),
+            )
+            conn.execute(
+                "UPDATE users SET balance = balance + ? WHERE id=?",
+                (prize, winner["user_id"]),
+            )
+
+        losers = [tk for tk in all_tickets if tk["id"] not in winner_ids]
+        for loser in losers:
+            conn.execute("UPDATE lottery_tickets SET status='lost' WHERE id=?", (loser["id"],))
+
+    tier_labels = {1: "🥇 الجائزة الأولى ($100)", 2: "🥈 الجائزة الثانية ($200)", 3: "🥉 الجائزة الثالثة ($500)"}
+
+    # إشعار الفائزين
+    for i, winner in enumerate(winners):
+        tier, prize = prize_map[i]
+        try:
+            await context.bot.send_message(
+                chat_id=winner["telegram_id"],
+                text=(
+                    f"🎉 *مبروك! فزت في السحب الأسبوعي!*\n\n"
+                    f"{tier_labels[tier]}\n"
+                    f"🎟 رقم تذكرتك: `{winner['ticket_number']}`\n"
+                    f"💰 الجائزة: *${prize:.0f}* أُضيفت لرصيدك فوراً!\n\n"
+                    f"شكراً لمشاركتك في Zone Luck 🌟"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+    # إشعار الخاسرين
+    for loser in losers:
+        try:
+            await context.bot.send_message(
+                chat_id=loser["telegram_id"],
+                text=(
+                    f"🎟 *نتيجة السحب الأسبوعي*\n\n"
+                    f"للأسف بطاقتك `{loser['ticket_number']}` لم تفز هذه المرة 😔\n\n"
+                    f"لا تيأس! اشتري تذاكر جديدة للسحب القادم\n"
+                    f"📅 كل أحد الساعة 9 مساءً بتوقيت كندا 🍀"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+    # ملخص للأدمن
+    winners_text = "\n".join(
+        f"  {tier_labels[prize_map[i][0]]}: `{w['ticket_number']}`"
+        for i, w in enumerate(winners)
+    )
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                f"✅ *السحب الأسبوعي التلقائي*\n\n"
+                f"📅 {now_label}\n"
+                f"🎟 إجمالي التذاكر: {len(all_tickets)}\n\n"
+                f"🏆 الفائزون:\n{winners_text}\n\n"
+                f"😔 الخاسرون (تم إشعارهم): {len(losers)}"
+            ),
+            parse_mode="Markdown",
+        )
+    except Exception:
+        pass
