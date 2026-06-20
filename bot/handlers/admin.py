@@ -1848,13 +1848,34 @@ async def admin_fix_dup_bets(update: Update, context: ContextTypes.DEFAULT_TYPE)
             key = (row["telegram_id"], row["username"])
             if key not in refunded_users:
                 refunded_users[key] = {"matches": [], "total": 0.0}
-            refunded_users[key]["matches"].append(f"{row['team_home']} vs {row['team_away']}")
+            refunded_users[key]["matches"].append(
+                (f"{row['team_home']} vs {row['team_away']}", float(row["entry_fee"]))
+            )
             refunded_users[key]["total"] += float(row["entry_fee"])
+
+    # إشعار كل مستخدم متضرر برسالة مباشرة
+    for (tg_id, username), info in refunded_users.items():
+        try:
+            match_lines = "\n".join(
+                f"  • {m} — ردّ ${fee:.2f}" for m, fee in info["matches"]
+            )
+            await context.bot.send_message(
+                chat_id=tg_id,
+                text=(
+                    f"↩️ *تم إرجاع رهان مكرر*\n\n"
+                    f"تم اكتشاف رهانات مكررة منك على نفس المباراة وتم حذف الزيادة.\n\n"
+                    f"{match_lines}\n\n"
+                    f"💰 إجمالي المُعاد لرصيدك: *${info['total']:.2f}*"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass  # المستخدم قد يكون حجب البوت
 
     lines = [f"✅ *تم تنظيف {len(dups)} رهان مكرر وإرجاع رسومه*\n"]
     for (tg_id, username), info in refunded_users.items():
         name = f"@{username}" if username else f"ID:{tg_id}"
-        matches_str = "، ".join(set(info["matches"]))
+        matches_str = "، ".join(set(m for m, _ in info["matches"]))
         lines.append(f"👤 {name} — ردّ ${info['total']:.2f} — [{matches_str}]")
 
     await query.edit_message_text(
