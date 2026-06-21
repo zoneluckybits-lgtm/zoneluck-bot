@@ -14,21 +14,40 @@ def is_admin(telegram_id):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    args = context.args
 
     referred_by = None
+    args = context.args or []
     if args and args[0].startswith("ref_"):
         try:
             referred_by = int(args[0][4:])
+            if referred_by == user.id:
+                referred_by = None  # لا يحيل نفسه
         except ValueError:
             pass
 
-    register_user(user.id, user.username, user.full_name, referred_by)
+    try:
+        register_user(user.id, user.username, user.full_name, referred_by)
+    except Exception:
+        pass  # إذا كان المستخدم مسجلاً مسبقاً أو حدث خطأ، نكمل
 
     lang = get_user_lang(user.id)
     db_user = get_user_by_telegram_id(user.id)
+
+    if not db_user:
+        # محاولة أخيرة لتسجيله
+        try:
+            register_user(user.id, user.username, user.full_name, None)
+            db_user = get_user_by_telegram_id(user.id)
+        except Exception:
+            pass
+
+    if not db_user:
+        await update.message.reply_text("❌ حدث خطأ. حاول مجدداً /start")
+        return
+
+    name = format_user_name(dict(db_user))
     await update.message.reply_text(
-        t("welcome", lang, name=format_user_name(dict(db_user)), balance=db_user["balance"]),
+        t("welcome", lang, name=name, balance=db_user["balance"]),
         parse_mode="Markdown",
         reply_markup=main_menu_keyboard(user.id, lang),
     )
