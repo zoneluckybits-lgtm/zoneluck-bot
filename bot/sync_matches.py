@@ -70,15 +70,19 @@ async def fetch_upcoming_matches(days_ahead: int = 30) -> list[dict]:
 
 
 def sync_matches_to_db(matches: list[dict]) -> tuple[int, int]:
-    """Insert new upcoming matches into DB, skip duplicates. Returns (added, skipped)."""
+    """Insert new upcoming matches into DB, skip duplicates. Returns (added, skipped).
+    Duplicate check: same team names on same date (ignores time to avoid UTC/Saudi confusion)."""
     added = 0
     skipped = 0
 
     with db() as conn:
         for m in matches:
+            match_date = m["match_time"][:10]  # YYYY-MM-DD فقط
             existing = conn.execute(
-                "SELECT id FROM matches WHERE team_home=? AND team_away=? AND match_time=?",
-                (m["home"], m["away"], m["match_time"]),
+                """SELECT id FROM matches
+                   WHERE team_home=? AND team_away=?
+                   AND DATE(match_time)=?""",
+                (m["home"], m["away"], match_date),
             ).fetchone()
 
             if existing:
