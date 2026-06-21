@@ -835,7 +835,11 @@ async def admin_add_match_away(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
     context.user_data["match_away"] = update.message.text.strip()
     await update.message.reply_text(
-        "🕐 أدخل موعد المباراة بالصيغة التالية:\nYYYY-MM-DD HH:MM\nمثال: 2025-07-15 20:00",
+        "🕐 أدخل موعد المباراة *بتوقيت السعودية (UTC+3)*:\n\n"
+        "الصيغة: `YYYY-MM-DD HH:MM`\n"
+        "مثال: `2026-06-21 19:00`\n\n"
+        "⚠️ تأكد أن الوقت بتوقيت السعودية وليس UTC",
+        parse_mode="Markdown",
         reply_markup=_CANCEL_TO_MATCHES_KB,
     )
     return ADMIN_ADD_MATCH_TIME
