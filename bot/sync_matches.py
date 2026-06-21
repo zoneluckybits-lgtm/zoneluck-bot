@@ -1,9 +1,10 @@
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database import db
 
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
 FINISHED_STATUSES = {"full time", "ft", "aet", "pen", "finished", "complete", "final", "postponed", "cancelled"}
+SAUDI_OFFSET = timedelta(hours=3)  # ESPN returns UTC → نحوله لتوقيت السعودية
 
 
 def _espn_date(dt: datetime) -> str:
@@ -32,10 +33,11 @@ def _parse_espn_event(event: dict) -> dict | None:
         return None
 
     try:
-        dt = datetime.strptime(raw_date[:16], "%Y-%m-%dT%H:%M")
-        if dt < datetime.utcnow():
+        dt_utc = datetime.strptime(raw_date[:16], "%Y-%m-%dT%H:%M")  # UTC من ESPN
+        dt_saudi = dt_utc + SAUDI_OFFSET  # تحويل لتوقيت السعودية
+        if dt_utc < datetime.utcnow():
             return None
-        match_time = dt.strftime("%Y-%m-%d %H:%M")
+        match_time = dt_saudi.strftime("%Y-%m-%d %H:%M")  # نحفظ توقيت السعودية
     except ValueError:
         return None
 
@@ -93,10 +95,11 @@ def sync_matches_to_db(matches: list[dict]) -> tuple[int, int]:
 
 
 def cleanup_past_unresolved_matches():
-    """Mark matches whose time has passed but are still 'upcoming' as 'expired'."""
-    now = datetime.utcnow()
+    """Mark matches whose time has passed but are still 'upcoming' as 'expired'.
+    match_time is stored in Saudi time (UTC+3), so we compare with Saudi now."""
+    now_saudi = datetime.utcnow() + SAUDI_OFFSET
     with db() as conn:
         conn.execute(
             "UPDATE matches SET status='expired' WHERE status='upcoming' AND match_time < ?",
-            (now,),
+            (now_saudi,),
         )
