@@ -4,7 +4,7 @@ import logging
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from telegram import Update
+from telegram import Update, BotCommand, MenuButtonCommands
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -122,6 +122,11 @@ def main():
             name="weekly_lottery",
         )
         logger.info("Weekly lottery draw scheduled: every Sunday 9 PM ET")
+        await application.bot.set_my_commands([
+            BotCommand("start", "🏠 القائمة الرئيسية"),
+        ])
+        await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        logger.info("Bot commands and menu button set.")
 
     app = Application.builder().token(token).post_init(post_init).build()
 
