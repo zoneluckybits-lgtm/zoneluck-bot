@@ -35,7 +35,8 @@ def _parse_espn_event(event: dict) -> dict | None:
     try:
         dt_utc = datetime.strptime(raw_date[:16], "%Y-%m-%dT%H:%M")  # UTC من ESPN
         dt_saudi = dt_utc + SAUDI_OFFSET  # تحويل لتوقيت السعودية
-        if dt_utc < datetime.utcnow():
+        # لا نستثني المباراة إلا إذا مضى عليها أكثر من ساعتين (هامش للتأخير)
+        if dt_utc < datetime.utcnow() - timedelta(hours=2):
             return None
         match_time = dt_saudi.strftime("%Y-%m-%d %H:%M")  # نحفظ توقيت السعودية
     except ValueError:
