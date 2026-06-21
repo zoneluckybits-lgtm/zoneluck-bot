@@ -667,6 +667,7 @@ async def admin_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ إضافة مباراة يدوياً", callback_data="admin_add_match")],
         [InlineKeyboardButton("🔄 استيراد تلقائي من كأس العالم", callback_data="admin_sync_matches")],
+        [InlineKeyboardButton("🗑️ مسح المكرر + إعادة الاستيراد", callback_data="admin_clean_sync")],
         [InlineKeyboardButton("🔍 فحص قاعدة البيانات", callback_data="admin_debug_matches")],
     ]
 
@@ -1339,6 +1340,44 @@ async def admin_lottery_third(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 @admin_only
+async def admin_clean_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """حذف المباريات القادمة بلا رهانات، ثم إعادة الاستيراد من ESPN بتوقيت صحيح."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("⏳ جارٍ مسح المباريات المكررة وإعادة الاستيراد...")
+
+    try:
+        # احذف كل المباريات upcoming التي ليس عليها رهانات
+        with db() as conn:
+            deleted = conn.execute(
+                """DELETE FROM matches WHERE status='upcoming'
+                   AND id NOT IN (SELECT DISTINCT match_id FROM bets)"""
+            ).rowcount
+
+        # أعد الاستيراد بالتوقيت الصحيح
+        events = await fetch_upcoming_matches()
+        added, skipped = sync_matches_to_db(events) if events else (0, 0)
+
+        await query.edit_message_text(
+            f"✅ *تمت إعادة المزامنة*\n\n"
+            f"🗑️ مباريات حُذفت (بلا رهانات): *{deleted}*\n"
+            f"📥 مباريات أُضيفت جديدة: *{added}*\n"
+            f"⏭ مكررة (تخطيت): *{skipped}*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚽ عرض المباريات", callback_data="admin_matches")],
+            ]),
+        )
+    except Exception as e:
+        await query.edit_message_text(
+            f"❌ خطأ: `{str(e)[:150]}`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 رجوع", callback_data="admin_matches")]]
+            ),
+        )
+
+
 async def admin_sync_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
