@@ -41,13 +41,16 @@ def _match_started(match_time_val):
     """True if match has already started. match_time stored as Saudi time (naive)."""
     if not match_time_val:
         return False
-    if isinstance(match_time_val, str):
-        try:
+    try:
+        if isinstance(match_time_val, str):
             match_time_val = datetime.strptime(str(match_time_val)[:16], "%Y-%m-%d %H:%M")
-        except ValueError:
-            return False
-    now_saudi = datetime.now(SAUDI_TZ).replace(tzinfo=None)
-    return now_saudi >= match_time_val
+        # إذا pg8000 رجع datetime مع timezone (UTC) → حوله لتوقيت سعودي naive
+        if getattr(match_time_val, 'tzinfo', None) is not None:
+            match_time_val = match_time_val.astimezone(SAUDI_TZ).replace(tzinfo=None)
+        now_saudi = datetime.now(SAUDI_TZ).replace(tzinfo=None)
+        return now_saudi >= match_time_val
+    except Exception:
+        return False
 
 
 def get_matches_by_category(category):
