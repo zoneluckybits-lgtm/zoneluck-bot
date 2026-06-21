@@ -1347,10 +1347,10 @@ async def admin_clean_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("⏳ جارٍ مسح المباريات المكررة وإعادة الاستيراد...")
 
     try:
-        # احذف كل المباريات upcoming التي ليس عليها رهانات
+        # احذف كل المباريات (upcoming + expired) التي ليس عليها رهانات
         with db() as conn:
             deleted = conn.execute(
-                """DELETE FROM matches WHERE status='upcoming'
+                """DELETE FROM matches WHERE status IN ('upcoming', 'expired')
                    AND id NOT IN (SELECT DISTINCT match_id FROM bets)"""
             ).rowcount
 
