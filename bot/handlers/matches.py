@@ -123,7 +123,7 @@ async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
         match_time = _fmt_time(m["match_time"])
         buttons.append([
             InlineKeyboardButton(
-                f"⚽ {m['team_home']} vs {m['team_away']} | {match_time}",
+                f"⚽ {m['team_home']} vs {m['team_away']} | 🕐 {match_time} (ت.س)",
                 callback_data=f"bet_match_{m['id']}",
             )
         ])
