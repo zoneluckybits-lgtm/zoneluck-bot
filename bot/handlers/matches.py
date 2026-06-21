@@ -25,6 +25,9 @@ def get_bet_info(key, lang):
     return names.get(key, (key, ""))
 
 
+SAUDI_TZ = timezone(timedelta(hours=3))
+
+
 def _fmt_time(val):
     """Return 'YYYY-MM-DD HH:MM' from a datetime object or string."""
     if isinstance(val, datetime):
@@ -32,6 +35,19 @@ def _fmt_time(val):
     if val:
         return str(val)[:16]
     return "?"
+
+
+def _match_started(match_time_val):
+    """True if match has already started. match_time stored as Saudi time (naive)."""
+    if not match_time_val:
+        return False
+    if isinstance(match_time_val, str):
+        try:
+            match_time_val = datetime.strptime(str(match_time_val)[:16], "%Y-%m-%d %H:%M")
+        except ValueError:
+            return False
+    now_saudi = datetime.now(SAUDI_TZ).replace(tzinfo=None)
+    return now_saudi >= match_time_val
 
 
 def get_matches_by_category(category):
@@ -136,6 +152,18 @@ async def show_bet_types(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not match:
         await query.edit_message_text(t("match_not_found", lang))
+        return
+
+    if _match_started(match["match_time"]):
+        await query.edit_message_text(
+            f"🔒 *انتهى وقت الرهان على هذه المباراة*\n\n"
+            f"⚽ {match['team_home']} vs {match['team_away']}\n"
+            f"🕐 بدأت المباراة في {_fmt_time(match['match_time'])} (توقيت السعودية)",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(t("btn_back_short", lang), callback_data="matches_menu")]]
+            ),
+        )
         return
 
     context.user_data["bet_match_id"] = match_id
@@ -260,6 +288,16 @@ async def bet_prediction_received(update: Update, context: ContextTypes.DEFAULT_
 
     if not all([match_id, bet_type, fee, payout]):
         await update.message.reply_text(t("bet_error", lang))
+        return ConversationHandler.END
+
+    # تحقق: هل بدأت المباراة؟
+    with db() as conn:
+        match_row = conn.execute("SELECT match_time, team_home, team_away FROM matches WHERE id = ?", (match_id,)).fetchone()
+    if match_row and _match_started(match_row["match_time"]):
+        await update.message.reply_text(
+            f"🔒 *انتهى وقت الرهان*\n\nبدأت المباراة في {_fmt_time(match_row['match_time'])} (توقيت السعودية).",
+            parse_mode="Markdown",
+        )
         return ConversationHandler.END
 
     if db_user["balance"] < fee:
